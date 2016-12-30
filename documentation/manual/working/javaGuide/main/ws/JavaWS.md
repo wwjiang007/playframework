@@ -9,7 +9,7 @@ There are two important parts to using the WS API: making a request, and process
 
 ## Making a Request
 
-To use WS, first add `javaWs` to your `build.sbt` file:
+To use WS, first add `ws` to your `build.sbt` file:
 
 @[javaws-sbt-dependencies](code/javaws.sbt)
 
@@ -198,6 +198,10 @@ You can also use [`play.libs.ws.WS.newClient`](api/java/play/libs/ws/WS.html) to
 Or, you can run the `WSClient` completely standalone without involving a running Play application at all:
 
 @[ws-standalone](code/javaguide/ws/Standalone.java)
+
+If you want to run `WSClient` standalone, but still use [[non-programatic configuration|JavaWS#configuring-ws]] (including [[SSL|WsSSL]]), you can use a configuration parser like this:
+
+@[ws-standalone-with-config](code/javaguide/ws/StandaloneWithConfig.java)
 
 Once you are done with your custom client work, you **must** close the client:
 

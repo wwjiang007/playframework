@@ -6,8 +6,9 @@ import buildinfo.BuildInfo
 
 object Dependencies {
 
-  val akkaVersion = "2.4.12"
-  val akkaHttpVersion = "2.4.11"
+  val akkaVersion = "2.4.16"
+  val akkaHttpVersion = "10.0.0"
+  val playJsonVersion = "2.6.0-M1"
 
   val specsVersion = "3.8.6"
   val specsBuild = Seq(
@@ -26,7 +27,9 @@ object Dependencies {
     "com.fasterxml.jackson.core" % "jackson-databind",
     "com.fasterxml.jackson.datatype" % "jackson-datatype-jdk8",
     "com.fasterxml.jackson.datatype" % "jackson-datatype-jsr310"
-  ).map(_ % "2.7.8")
+  ).map(_ % "2.8.5")
+
+  val playJson = "com.typesafe.play" %% "play-json" % playJsonVersion
 
   val slf4j = Seq("slf4j-api", "jul-to-slf4j", "jcl-over-slf4j").map("org.slf4j" % _ % "1.7.21")
   val logback = "ch.qos.logback" % "logback-classic" % "1.1.7"
@@ -55,7 +58,7 @@ object Dependencies {
     "org.hibernate" % "hibernate-entitymanager" % "5.1.0.Final" % "test"
   )
 
-  val scalaJava8Compat = "org.scala-lang.modules" %% "scala-java8-compat" % "0.8.0-RC7"
+  val scalaJava8Compat = "org.scala-lang.modules" %% "scala-java8-compat" % "0.8.0"
   def scalaParserCombinators(scalaVersion: String) = CrossVersion.partialVersion(scalaVersion) match {
     case Some((2, major)) if major >= 11 => Seq("org.scala-lang.modules" %% "scala-parser-combinators" % "1.0.4")
     case _ => Nil
@@ -115,9 +118,12 @@ object Dependencies {
   def runtime(scalaVersion: String) =
     slf4j ++
     Seq("akka-actor", "akka-slf4j").map("com.typesafe.akka" %% _ % akkaVersion) ++
+    Seq("akka-testkit").map("com.typesafe.akka" %% _ % akkaVersion % Test) ++
     jacksons ++
     Seq(
       "commons-codec" % "commons-codec" % "1.10",
+
+      playJson,
 
       guava,
 
@@ -145,8 +151,7 @@ object Dependencies {
   val nettyUtilsDependencies = slf4j
 
   val akkaHttp = Seq(
-    "com.typesafe.akka" %% "akka-http-core" % akkaHttpVersion,
-    "com.typesafe.akka" %% "akka-http-experimental" % akkaHttpVersion
+    "com.typesafe.akka" %% "akka-http" % akkaHttpVersion
   )
 
   def routesCompilerDependencies(scalaVersion: String) = Seq(
@@ -203,8 +208,9 @@ object Dependencies {
     "org.webjars" % "prettify" % "4-Mar-2013" % "webjars"
   )
 
+  val playDocVersion = "1.7.0"
   val playDocsDependencies = Seq(
-    "com.typesafe.play" %% "play-doc" % "1.6.0"
+    "com.typesafe.play" %% "play-doc" % playDocVersion
   ) ++ playdocWebjarDependencies
 
   val streamsDependencies = Seq(
@@ -214,11 +220,7 @@ object Dependencies {
     logback % Test
   ) ++ specsBuild.map(_ % "test") ++ javaTestDeps
 
-  def jsonDependencies(scalaVersion: String) = Seq(
-    "org.scala-lang" % "scala-reflect" % scalaVersion,
-    logback % Test) ++
-  jacksons ++
-  specsBuild.map(_ % Test)
+
 
   val scalacheckDependencies = Seq(
     "org.specs2"     %% "specs2-scalacheck" % specsVersion % Test,
@@ -247,7 +249,7 @@ object Dependencies {
     ) ++ specsBuild.map(_ % Test)
 
   val asyncHttpClientVersion = "2.0.24"
-  val playWsDeps = Seq(
+  val playAhcWsDeps = Seq(
     guava,
     "org.asynchttpclient" % "async-http-client" % asyncHttpClientVersion,
     logback % Test
@@ -257,7 +259,7 @@ object Dependencies {
     mockitoAll % Test
 
   val playDocsSbtPluginDependencies = Seq(
-    "com.typesafe.play" %% "play-doc" % "1.3.0"
+    "com.typesafe.play" %% "play-doc" % playDocVersion
   )
 
 }

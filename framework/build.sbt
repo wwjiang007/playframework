@@ -5,7 +5,7 @@
 import BuildSettings._
 import Dependencies._
 import Generators._
-import com.typesafe.tools.mima.plugin.MimaKeys.{ previousArtifacts, reportBinaryIssues }
+import com.typesafe.tools.mima.plugin.MimaKeys.{ mimaPreviousArtifacts, mimaReportBinaryIssues }
 import interplay.PlayBuildBase.autoImport._
 import sbt.ScriptedPlugin._
 import sbt._
@@ -42,14 +42,6 @@ lazy val SbtRoutesCompilerProject = PlaySbtProject("SBT-Routes-Compiler", "route
 lazy val StreamsProject = PlayCrossBuiltProject("Play-Streams", "play-streams")
     .settings(libraryDependencies ++= streamsDependencies)
 
-lazy val FunctionalProject = PlayCrossBuiltProject("Play-Functional", "play-functional")
-
-lazy val DataCommonsProject = PlayCrossBuiltProject("Play-DataCommons", "play-datacommons")
-
-lazy val JsonProject = PlayCrossBuiltProject("Play-Json", "play-json")
-    .settings(libraryDependencies ++= jsonDependencies(scalaVersion.value))
-    .dependsOn(FunctionalProject, DataCommonsProject)
-
 lazy val PlayExceptionsProject = PlayNonCrossBuiltProject("Play-Exceptions", "play-exceptions")
 
 lazy val PlayNettyUtilsProject = PlayNonCrossBuiltProject("Play-Netty-Utils", "play-netty-utils")
@@ -84,7 +76,6 @@ lazy val PlayProject = PlayCrossBuiltProject("Play", "play")
     ).settings(Docs.playdocSettings: _*)
     .dependsOn(
       BuildLinkProject,
-      JsonProject,
       PlayNettyUtilsProject,
       StreamsProject
     )
@@ -104,9 +95,9 @@ lazy val PlayAkkaHttpServerProject = PlayCrossBuiltProject("Play-Akka-Http-Serve
     .settings(libraryDependencies ++= akkaHttp)
     // Include scripted tests here as well as in the SBT Plugin, because we
     // don't want the SBT Plugin to have a dependency on an experimental module.
-    .settings(playFullScriptedSettings: _*)
+    //.settings(ScriptedPlugin.scriptedSettings ++ playScriptedSettings)
     .dependsOn(PlayServerProject, StreamsProject)
-    .dependsOn(PlaySpecs2Project % "test", PlayWsProject % "test")
+    .dependsOn(PlaySpecs2Project % "test", PlayAhcWsProject % "test")
 
 lazy val PlayJdbcApiProject = PlayCrossBuiltProject("Play-JDBC-Api", "play-jdbc-api")
     .dependsOn(PlayProject)
@@ -198,34 +189,38 @@ lazy val PlayLogback = PlayCrossBuiltProject("Play-Logback", "play-logback")
     ).dependsOn(PlayProject)
 
 lazy val PlayWsProject = PlayCrossBuiltProject("Play-WS", "play-ws")
-    .settings(
-      libraryDependencies ++= playWsDeps,
-      parallelExecution in Test := false,
-      // quieten deprecation warnings in tests
-      scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
-    ).dependsOn(PlayProject)
-    .dependsOn(PlaySpecs2Project % "test")
+  .dependsOn(PlayProject)
 
-lazy val PlayWsJavaProject = PlayCrossBuiltProject("Play-Java-WS", "play-java-ws")
-    .settings(
-      libraryDependencies ++= playWsDeps,
-      parallelExecution in Test := false
-    ).dependsOn(PlayProject)
-    .dependsOn(PlayWsProject % "test->test;compile->compile", PlayJavaProject)
+lazy val PlayAhcWsProject = PlayCrossBuiltProject("Play-AHC-WS", "play-ahc-ws")
+  .settings(
+    libraryDependencies ++= playAhcWsDeps,
+    parallelExecution in Test := false,
+    // quieten deprecation warnings in tests
+    scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
+  ).dependsOn(PlayWsProject, PlayJavaProject)
+  .dependsOn(PlaySpecs2Project % "test")
+
+lazy val PlayOpenIdProject = PlayCrossBuiltProject("Play-OpenID", "play-openid")
+  .settings(
+    parallelExecution in Test := false,
+    // quieten deprecation warnings in tests
+    scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
+  ).dependsOn(PlayAhcWsProject)
+  .dependsOn(PlaySpecs2Project % "test")
 
 lazy val PlayFiltersHelpersProject = PlayCrossBuiltProject("Filters-Helpers", "play-filters-helpers")
     .settings(
       parallelExecution in Test := false
-    ).dependsOn(PlayProject, PlayJavaProject % "test", PlaySpecs2Project % "test", PlayWsProject % "test")
+    ).dependsOn(PlayProject, PlayJavaProject % "test", PlaySpecs2Project % "test", PlayAhcWsProject % "test")
 
 // This project is just for testing Play, not really a public artifact
 lazy val PlayIntegrationTestProject = PlayCrossBuiltProject("Play-Integration-Test", "play-integration-test")
     .settings(
       libraryDependencies += h2database % Test,
       parallelExecution in Test := false,
-      previousArtifacts := Set.empty
+      mimaPreviousArtifacts := Set.empty
     )
-    .dependsOn(PlayProject % "test->test", PlayLogback % "test->test", PlayWsProject, PlayWsJavaProject, PlaySpecs2Project)
+    .dependsOn(PlayProject % "test->test", PlayLogback % "test->test", PlayAhcWsProject % "test->test", PlaySpecs2Project)
     .dependsOn(PlayFiltersHelpersProject)
     .dependsOn(PlayJavaProject)
     .dependsOn(PlayJavaFormsProject)
@@ -236,9 +231,9 @@ lazy val PlayMicrobenchmarkProject = PlayCrossBuiltProject("Play-Microbenchmark"
     .enablePlugins(JmhPlugin)
     .settings(
       parallelExecution in Test := false,
-      previousArtifacts := Set.empty
+      mimaPreviousArtifacts := Set.empty
     )
-    .dependsOn(PlayProject % "test->test", PlayLogback % "test->test", PlayWsProject, PlayWsJavaProject, PlaySpecs2Project)
+    .dependsOn(PlayProject % "test->test", PlayLogback % "test->test", PlayAhcWsProject, PlaySpecs2Project)
     .dependsOn(PlayFiltersHelpersProject)
     .dependsOn(PlayJavaProject)
     .dependsOn(PlayAkkaHttpServerProject)
@@ -260,9 +255,6 @@ lazy val publishedProjects = Seq[ProjectReference](
   PlayProject,
   PlayGuiceProject,
   BuildLinkProject,
-  FunctionalProject,
-  DataCommonsProject,
-  JsonProject,
   RoutesCompilerProject,
   SbtRoutesCompilerProject,
   PlayAkkaHttpServerProject,
@@ -279,7 +271,8 @@ lazy val publishedProjects = Seq[ProjectReference](
   PlayServerProject,
   PlayLogback,
   PlayWsProject,
-  PlayWsJavaProject,
+  PlayAhcWsProject,
+  PlayOpenIdProject,
   SbtRunSupportProject,
   RunSupportProject,
   SbtPluginProject,
@@ -305,7 +298,7 @@ lazy val PlayFramework = Project("Play-Framework", file("."))
       libraryDependencies ++= (runtime(scalaVersion.value) ++ jdbcDeps),
       Docs.apiDocsInclude := false,
       Docs.apiDocsIncludeManaged := false,
-      reportBinaryIssues := (),
+      mimaReportBinaryIssues := (),
       commands += Commands.quickPublish
     ).settings(Release.settings: _*)
     .aggregate(publishedProjects: _*)

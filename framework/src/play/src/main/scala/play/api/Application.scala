@@ -6,15 +6,17 @@ package play.api
 import java.io._
 import javax.inject.Inject
 
-import akka.actor.ActorSystem
+import akka.actor.{ ActorSystem, Props }
 import akka.stream.{ ActorMaterializer, Materializer }
 import javax.inject.Singleton
+
 import play.api.http._
 import play.api.inject.{ DefaultApplicationLifecycle, Injector, NewInstanceInjector, SimpleInjector }
-import play.api.libs.Files.{ DefaultTemporaryFileCreator, TemporaryFileCreator }
+import play.api.libs.Files._
 import play.api.libs.concurrent.ActorSystemProvider
 import play.api.libs.crypto._
 import play.api.mvc._
+import play.api.mvc.request.{ DefaultRequestFactory, RequestFactory }
 import play.api.routing.Router
 import play.core.{ SourceMapper, WebCommands }
 import play.utils._
@@ -53,7 +55,12 @@ trait Application {
   /**
    * `Dev`, `Prod` or `Test`
    */
-  def mode: Mode.Mode
+  def mode: Mode.Mode = environment.mode
+
+  /**
+   * The application's environment
+   */
+  def environment: Environment
 
   private[play] def isDev = (mode == Mode.Dev)
   private[play] def isTest = (mode == Mode.Test)
@@ -61,7 +68,7 @@ trait Application {
 
   def configuration: Configuration
 
-  private[play] lazy val httpConfiguration = HttpConfiguration.fromConfiguration(configuration)
+  private[play] lazy val httpConfiguration = HttpConfiguration.fromConfiguration(configuration, environment)
 
   /**
    * The default ActorSystem used by the application.
@@ -74,11 +81,9 @@ trait Application {
   implicit def materializer: Materializer
 
   /**
-   * Cached value of `routes`. For performance, don't synchronize
-   * the value. We always use the same logic to calculate its value
-   * so it will end up consistent across threads anyway.
+   * The factory used to create requests for this application.
    */
-  private var cachedRoutes: Router = null
+  def requestFactory: RequestFactory
 
   /**
    * The HTTP request handler
@@ -209,10 +214,11 @@ class OptionalSourceMapper(val sourceMapper: Option[SourceMapper])
 
 @Singleton
 class DefaultApplication @Inject() (
-    environment: Environment,
+    override val environment: Environment,
     applicationLifecycle: DefaultApplicationLifecycle,
     override val injector: Injector,
     override val configuration: Configuration,
+    override val requestFactory: RequestFactory,
     override val requestHandler: HttpRequestHandler,
     override val errorHandler: HttpErrorHandler,
     override val actorSystem: ActorSystem,
@@ -221,8 +227,6 @@ class DefaultApplication @Inject() (
   def path = environment.rootPath
 
   def classloader = environment.classLoader
-
-  def mode = environment.mode
 
   def stop() = applicationLifecycle.stop()
 }
@@ -239,30 +243,32 @@ trait BuiltInComponents {
 
   def router: Router
 
-  lazy val injector: Injector = new SimpleInjector(NewInstanceInjector) + router + cookieSigner + csrfTokenSigner + httpConfiguration + tempFileCreator
+  lazy val injector: Injector = new SimpleInjector(NewInstanceInjector) + router + cookieSigner + csrfTokenSigner + httpConfiguration + tempFileCreator + fileMimeTypes
 
-  lazy val playBodyParsers: PlayBodyParsers = PlayBodyParsers(httpConfiguration.parser, httpErrorHandler, materializer)
+  lazy val playBodyParsers: PlayBodyParsers = PlayBodyParsers(httpConfiguration.parser, httpErrorHandler, materializer, tempFileCreator)
   lazy val defaultBodyParser: BodyParser[AnyContent] = playBodyParsers.default
   lazy val defaultActionBuilder: DefaultActionBuilder = DefaultActionBuilder(defaultBodyParser)
 
-  lazy val httpConfiguration: HttpConfiguration = HttpConfiguration.fromConfiguration(configuration)
+  lazy val httpConfiguration: HttpConfiguration = HttpConfiguration.fromConfiguration(configuration, environment)
+  lazy val requestFactory: RequestFactory = new DefaultRequestFactory(httpConfiguration)
   lazy val httpRequestHandler: HttpRequestHandler = new DefaultHttpRequestHandler(router, httpErrorHandler, httpConfiguration, httpFilters: _*)
   lazy val httpErrorHandler: HttpErrorHandler = new DefaultHttpErrorHandler(environment, configuration, sourceMapper,
     Some(router))
   lazy val httpFilters: Seq[EssentialFilter] = Nil
 
   lazy val application: Application = new DefaultApplication(environment, applicationLifecycle, injector,
-    configuration, httpRequestHandler, httpErrorHandler, actorSystem, materializer)
+    configuration, requestFactory, httpRequestHandler, httpErrorHandler, actorSystem, materializer)
 
   lazy val actorSystem: ActorSystem = new ActorSystemProvider(environment, configuration, applicationLifecycle).get
   implicit lazy val materializer: Materializer = ActorMaterializer()(actorSystem)
   implicit lazy val executionContext: ExecutionContext = actorSystem.dispatcher
 
-  lazy val cryptoConfig: CryptoConfig = new CryptoConfigParser(environment, configuration).get
-
-  lazy val cookieSigner: CookieSigner = new CookieSignerProvider(cryptoConfig).get
+  lazy val cookieSigner: CookieSigner = new CookieSignerProvider(httpConfiguration.secret).get
 
   lazy val csrfTokenSigner: CSRFTokenSigner = new CSRFTokenSignerProvider(cookieSigner).get
 
-  lazy val tempFileCreator: TemporaryFileCreator = new DefaultTemporaryFileCreator(applicationLifecycle)
+  lazy val tempFileReaper: TemporaryFileReaper = new DefaultTemporaryFileReaper(actorSystem, TemporaryFileReaperConfiguration.fromConfiguration(configuration))
+  lazy val tempFileCreator: TemporaryFileCreator = new DefaultTemporaryFileCreator(applicationLifecycle, tempFileReaper)
+
+  lazy val fileMimeTypes: FileMimeTypes = new DefaultFileMimeTypesProvider(httpConfiguration.fileMimeTypes).get
 }

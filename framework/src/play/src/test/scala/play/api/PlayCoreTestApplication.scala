@@ -4,9 +4,11 @@
 package play.api
 
 import akka.stream.ActorMaterializer
-import play.api.http.{ NotImplementedHttpRequestHandler, DefaultHttpErrorHandler }
+import play.api.http.{ DefaultHttpErrorHandler, NotImplementedHttpRequestHandler }
 import play.api.libs.concurrent.ActorSystemProvider
 import java.io.File
+
+import play.api.mvc.request.DefaultRequestFactory
 
 /**
  * Fake application as used by Play core tests.  This is needed since Play core can't depend on the Play test API.
@@ -14,8 +16,7 @@ import java.io.File
  */
 private[play] case class PlayCoreTestApplication(
     config: Map[String, Any] = Map(),
-    path: File = new File("."),
-    mode: Mode.Mode = Mode.Test) extends Application {
+    path: File = new File(".")) extends Application {
 
   def this() = this(config = Map())
 
@@ -25,6 +26,8 @@ private[play] case class PlayCoreTestApplication(
   def actorSystem = lazyActorSystem.get()
   lazy val materializer = ActorMaterializer()(actorSystem)
   def stop() = lazyActorSystem.close()
+  lazy val requestFactory = new DefaultRequestFactory(httpConfiguration)
   val errorHandler = DefaultHttpErrorHandler
   val requestHandler = NotImplementedHttpRequestHandler
+  override lazy val environment: Environment = Environment.simple(path, mode)
 }

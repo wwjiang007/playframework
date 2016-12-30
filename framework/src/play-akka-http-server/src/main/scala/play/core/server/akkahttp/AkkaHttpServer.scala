@@ -20,9 +20,9 @@ import akka.stream.scaladsl._
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 import play.api.{ Configuration, _ }
-import play.api.http.{ HttpConfiguration, DefaultHttpErrorHandler, HttpErrorHandler }
+import play.api.http.{ DefaultHttpErrorHandler, HttpConfiguration, HttpErrorHandler }
 import play.api.inject.DefaultApplicationLifecycle
-import play.api.libs.streams.{ Accumulator, MaterializeOnDemandPublisher }
+import play.api.libs.streams.Accumulator
 import play.api.mvc._
 import play.api.routing.Router
 import play.core.{ ApplicationProvider, DefaultWebCommands, SourceMapper, WebCommands }
@@ -124,10 +124,20 @@ class AkkaHttpServer(
   // TODO: We can change this to an eager val when we fully support server configuration
   // instead of reading from the application configuration. At the moment we need to wait
   // until we have an Application available before we can read any configuration. :(
+
+  private lazy val resultUtils: ServerResultUtils = {
+    val httpConfiguration = applicationProvider.get match {
+      case Success(app) => HttpConfiguration.fromConfiguration(app.configuration, app.environment)
+      case Failure(_) => HttpConfiguration()
+    }
+    new ServerResultUtils(httpConfiguration)
+  }
+
   private lazy val modelConversion: ModelConversion = {
+    val configuration: Option[Configuration] = applicationProvider.get.toOption.map(_.configuration)
     val forwardedHeaderHandler = new ForwardedHeaderHandler(
-      ForwardedHeaderHandler.ForwardedHeaderHandlerConfig(applicationProvider.get.toOption.map(_.configuration)))
-    new ModelConversion(forwardedHeaderHandler)
+      ForwardedHeaderHandler.ForwardedHeaderHandlerConfig(configuration))
+    new ModelConversion(resultUtils, forwardedHeaderHandler)
   }
 
   private def handleRequest(remoteAddress: InetSocketAddress, request: HttpRequest, secure: Boolean): Future[HttpResponse] = {
@@ -175,11 +185,9 @@ class AkkaHttpServer(
     val upgradeToWebSocket = request.header[UpgradeToWebSocket]
 
     // Get the app's HttpErroHandler or fallback to a default value
-    val (errorHandler: HttpErrorHandler, httpConfig: HttpConfiguration) = {
-      tryApp match {
-        case Success(app) => (app.errorHandler, app.httpConfiguration)
-        case Failure(_) => (DefaultHttpErrorHandler, HttpConfiguration())
-      }
+    val errorHandler: HttpErrorHandler = tryApp match {
+      case Success(app) => app.errorHandler
+      case Failure(_) => DefaultHttpErrorHandler
     }
 
     (handler, upgradeToWebSocket) match {
@@ -191,7 +199,7 @@ class AkkaHttpServer(
             case error => errorHandler.onServerError(taggedRequestHeader, error)
           }
         }
-        executeAction(request, taggedRequestHeader, requestBodySource, actionWithErrorHandling, errorHandler, httpConfig)
+        executeAction(request, taggedRequestHeader, requestBodySource, actionWithErrorHandling, errorHandler)
 
       case (websocket: WebSocket, Some(upgrade)) =>
         import play.core.Execution.Implicits.trampoline
@@ -216,8 +224,7 @@ class AkkaHttpServer(
     taggedRequestHeader: RequestHeader,
     requestBodySource: Option[Source[ByteString, _]],
     action: EssentialAction,
-    errorHandler: HttpErrorHandler,
-    httpConfiguration: HttpConfiguration): Future[HttpResponse] = {
+    errorHandler: HttpErrorHandler): Future[HttpResponse] = {
 
     import play.core.Execution.Implicits.trampoline
     val actionAccumulator: Accumulator[ByteString, Result] = action(taggedRequestHeader)
@@ -227,8 +234,7 @@ class AkkaHttpServer(
       // requests demand.  This is due to a semantic mismatch between Play and Akka-HTTP, Play signals to continue
       // by requesting demand, Akka-HTTP signals to continue by attaching a sink to the source. See
       // https://github.com/akka/akka/issues/17782 for more details.
-      requestBodySource.map(source => Source.fromPublisher(new MaterializeOnDemandPublisher(source)))
-        .orElse(Some(Source.empty))
+      requestBodySource.map(source => Source.lazily(() => source)).orElse(Some(Source.empty))
     } else {
       requestBodySource
     }
@@ -238,7 +244,7 @@ class AkkaHttpServer(
       case Some(s) => actionAccumulator.run(s)
     }
     val responseFuture: Future[HttpResponse] = resultFuture.flatMap { result =>
-      val cleanedResult: Result = ServerResultUtils.prepareCookies(taggedRequestHeader, result, httpConfiguration)
+      val cleanedResult: Result = resultUtils.prepareCookies(taggedRequestHeader, result)
       modelConversion.convertResult(taggedRequestHeader, cleanedResult, request.protocol, errorHandler)
     }
     responseFuture

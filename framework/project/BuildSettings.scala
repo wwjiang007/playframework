@@ -7,7 +7,7 @@ import sbt.ScriptedPlugin._
 import sbt._
 import Keys._
 import com.typesafe.tools.mima.plugin.MimaPlugin.mimaDefaultSettings
-import com.typesafe.tools.mima.plugin.MimaKeys.previousArtifacts
+import com.typesafe.tools.mima.plugin.MimaKeys.mimaPreviousArtifacts
 
 import scalariform.formatter.preferences._
 import com.typesafe.sbt.SbtScalariform.scalariformSettings
@@ -53,9 +53,17 @@ object BuildSettings {
       homepage := Some(url("https://playframework.com")),
       ivyLoggingLevel := UpdateLogging.DownloadOnly,
       resolvers ++= Seq(
+        Resolver.sonatypeRepo("releases"),
         Resolver.typesafeRepo("releases"),
         Resolver.typesafeIvyRepo("releases")
       ),
+      scalacOptions in(Compile, doc) := {
+        // disable the new scaladoc feature for scala 2.12.0, might be removed in 2.12.0-1 (https://github.com/scala/scala-dev/issues/249)
+        CrossVersion.partialVersion(scalaVersion.value) match {
+          case Some((2, 12)) => Seq("-no-java-comments")
+          case _ => Seq()
+        }
+      },
       fork in Test := true,
       parallelExecution in Test := false,
       testListeners in (Test,test) := Nil,
@@ -120,7 +128,7 @@ object BuildSettings {
    * These settings are used by all projects that are part of the runtime, as opposed to development, mode of Play.
    */
   def playRuntimeSettings: Seq[Setting[_]] = playCommonSettings ++ mimaDefaultSettings ++ Seq(
-    previousArtifacts := {
+    mimaPreviousArtifacts := {
       // Binary compatibility is tested against these versions
       val previousVersions = {
         val VersionPattern = """^(\d+).(\d+).(\d+)(-.*)?""".r
@@ -193,7 +201,7 @@ object BuildSettings {
     scriptedLaunchOpts ++= Seq(
       "-Xmx768m",
       maxMetaspace,
-      "-Dscala.version=" + sys.props.get("scripted.scala.version").getOrElse(sys.props.get("scala.version").getOrElse("2.11.8"))
+      "-Dscala.version=" + sys.props.get("scripted.scala.version").getOrElse(sys.props.get("scala.version").getOrElse("2.12.1"))
     )
   )
 

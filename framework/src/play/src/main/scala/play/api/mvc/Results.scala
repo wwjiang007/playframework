@@ -11,7 +11,7 @@ import java.time.{ ZoneOffset, ZonedDateTime }
 import akka.stream.scaladsl.{ FileIO, Source, StreamConverters }
 import akka.util.ByteString
 import play.api.http.HeaderNames._
-import play.api.http._
+import play.api.http.{ FileMimeTypes, _ }
 import play.api.i18n.{ Lang, MessagesApi }
 import play.core.utils.CaseInsensitiveOrdered
 import play.utils.UriEncoding
@@ -30,7 +30,7 @@ import scala.concurrent.ExecutionContext
  */
 final class ResponseHeader(val status: Int, _headers: Map[String, String] = Map.empty, val reasonPhrase: Option[String] = None) {
   private[play] def this(status: Int, _headers: java.util.Map[String, String], reasonPhrase: Option[String]) =
-    this(status, collection.JavaConversions.mapAsScalaMap(_headers).toMap, reasonPhrase)
+    this(status, _headers.asScala.toMap, reasonPhrase)
 
   val headers: Map[String, String] = TreeMap[String, String]()(CaseInsensitiveOrdered) ++ _headers
 
@@ -272,6 +272,7 @@ case class Result(header: ResponseHeader, body: HttpEntity,
    * followed by all the other cookies in order.
    */
   def bakeCookies(
+    cookieHeaderEncoding: CookieHeaderEncoding = new DefaultCookieHeaderEncoding(),
     sessionBaker: CookieBaker[Session] = new DefaultSessionCookieBaker(),
     flashBaker: CookieBaker[Flash] = new DefaultFlashCookieBaker(),
     requestHasFlash: Boolean = false): Result = {
@@ -400,7 +401,7 @@ trait Results {
       )
     }
 
-    private def streamFile(file: Source[ByteString, _], name: String, length: Long, inline: Boolean): Result = {
+    private def streamFile(file: Source[ByteString, _], name: String, length: Long, inline: Boolean)(implicit fileMimeTypes: FileMimeTypes): Result = {
       Result(
         ResponseHeader(
           status,
@@ -414,7 +415,7 @@ trait Results {
         HttpEntity.Streamed(
           file,
           Some(length),
-          play.api.libs.MimeTypes.forFileName(name).orElse(Some(play.api.http.ContentTypes.BINARY))
+          fileMimeTypes.forFileName(name).orElse(Some(play.api.http.ContentTypes.BINARY))
         )
       )
     }
@@ -426,7 +427,7 @@ trait Results {
      * @param inline Use Content-Disposition inline or attachment.
      * @param fileName Function to retrieve the file name. By default the name of the file is used.
      */
-    def sendFile(content: java.io.File, inline: Boolean = true, fileName: java.io.File => String = _.getName, onClose: () => Unit = () => ())(implicit ec: ExecutionContext): Result = {
+    def sendFile(content: java.io.File, inline: Boolean = true, fileName: java.io.File => String = _.getName, onClose: () => Unit = () => ())(implicit ec: ExecutionContext, fileMimeTypes: FileMimeTypes): Result = {
       sendPath(content.toPath, inline, (p: Path) => fileName(p.toFile), onClose)
     }
 
@@ -437,11 +438,11 @@ trait Results {
      * @param inline Use Content-Disposition inline or attachment.
      * @param fileName Function to retrieve the file name. By default the name of the file is used.
      */
-    def sendPath(content: Path, inline: Boolean = true, fileName: Path => String = _.getFileName.toString, onClose: () => Unit = () => ())(implicit ec: ExecutionContext): Result = {
+    def sendPath(content: Path, inline: Boolean = true, fileName: Path => String = _.getFileName.toString, onClose: () => Unit = () => ())(implicit ec: ExecutionContext, fileMimeTypes: FileMimeTypes): Result = {
       val io = FileIO.fromPath(content).mapMaterializedValue(_.onComplete { _ =>
         onClose()
       })
-      streamFile(io, fileName(content), Files.size(content), inline)
+      streamFile(io, fileName(content), Files.size(content), inline)(fileMimeTypes)
     }
 
     /**
@@ -451,7 +452,7 @@ trait Results {
      * @param classLoader The classloader to load it from, defaults to the classloader for this class.
      * @param inline Whether it should be served as an inline file, or as an attachment.
      */
-    def sendResource(resource: String, classLoader: ClassLoader = Results.getClass.getClassLoader, inline: Boolean = true): Result = {
+    def sendResource(resource: String, classLoader: ClassLoader = Results.getClass.getClassLoader, inline: Boolean = true)(implicit fileMimeTypes: FileMimeTypes): Result = {
       val stream = classLoader.getResourceAsStream(resource)
       val fileName = resource.split('/').last
       streamFile(StreamConverters.fromInputStream(() => stream), fileName, stream.available(), inline)

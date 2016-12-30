@@ -3,7 +3,6 @@
  */
 package play.it.http
 
-import play.api.http.{ FlashConfiguration, SessionConfiguration }
 import play.api.mvc.Results._
 import play.api.mvc._
 import play.api.test._
@@ -11,11 +10,12 @@ import play.api.Application
 
 class ScalaResultsSpec extends PlaySpecification {
 
+  def cookieHeaderEncoding(implicit app: Application): CookieHeaderEncoding = app.injector.instanceOf[CookieHeaderEncoding]
   def sessionBaker(implicit app: Application): CookieBaker[Session] = app.injector.instanceOf[SessionCookieBaker]
   def flashBaker(implicit app: Application): CookieBaker[Flash] = app.injector.instanceOf[FlashCookieBaker]
 
   def bake(result: Result)(implicit app: Application): Result = {
-    result.bakeCookies(sessionBaker, flashBaker)
+    result.bakeCookies(cookieHeaderEncoding, sessionBaker, flashBaker)
   }
 
   def cookies(result: Result)(implicit app: Application): Seq[Cookie] = {
@@ -97,13 +97,19 @@ class ScalaResultsSpec extends PlaySpecification {
   }
 
   def withApplication[T](config: (String, Any)*)(block: Application => T): T = running(
-    _.configure(Map(config: _*) + ("play.crypto.secret" -> "foo"))
+    _.configure(Map(config: _*) + ("play.http.secret.key" -> "foo"))
   )(block)
-
-  def withFooPath[T](block: Application => T) = withApplication("play.http.context" -> "/foo")(block)
 
   def withFooDomain[T](block: Application => T) = withApplication("play.http.session.domain" -> ".foo.com")(block)
 
   def withSecureSession[T](block: Application => T) = withApplication("play.http.session.secure" -> true)(block)
 
+  def withFooPath[T](block: Application => T) = {
+    val path = "/foo"
+    withApplication(
+      "play.http.context" -> path,
+      "play.http.session.path" -> path,
+      "play.http.flash.path" -> path
+    )(block)
+  }
 }

@@ -3,19 +3,16 @@
  */
 package play.runsupport
 
+import java.io.File
 import java.net.URLClassLoader
-import java.util.List
 import java.util.Locale
 
-import sbt._
 import sbt.Path._
+import sbt._
 
-import scala.collection.JavaConversions
 import scala.reflect.ClassTag
-import scala.util.{ Properties, Try }
 import scala.util.control.NonFatal
-import java.io.File
-import java.util.concurrent.Callable
+import scala.util.{ Properties, Try }
 
 /**
  * A service that can watch files
@@ -29,17 +26,6 @@ trait FileWatchService {
    * @return A watcher
    */
   def watch(filesToWatch: Seq[File], onChange: () => Unit): FileWatcher
-
-  /**
-   * Watch the given sequence of files or directories.
-   *
-   * @param filesToWatch The files to watch.
-   * @param onChange A callback that is executed whenever something changes.
-   * @return A watcher
-   */
-  def watch(filesToWatch: List[File], onChange: Callable[Void]): FileWatcher = {
-    watch(JavaConversions.asScalaBuffer(filesToWatch), () => { onChange.call })
-  }
 
 }
 
@@ -150,7 +136,7 @@ private[play] class JNotifyFileWatchService(delegate: JNotifyFileWatchService.JN
 
 private object JNotifyFileWatchService {
 
-  import java.lang.reflect.{ Method, InvocationHandler, Proxy }
+  import java.lang.reflect.{ InvocationHandler, Method, Proxy }
 
   /**
    * Captures all the reflection invocations in one place.
@@ -291,9 +277,9 @@ private[play] class JDK7FileWatchService(logger: LoggerProxy) extends FileWatchS
 
             val events = watchKey.pollEvents()
 
-            import scala.collection.JavaConversions._
+            import scala.collection.JavaConverters._
             // If a directory has been created, we must watch it and its sub directories
-            events.foreach { event =>
+            events.asScala.foreach { event =>
 
               if (event.kind == ENTRY_CREATE) {
                 val file = watchKey.watchable.asInstanceOf[Path].resolve(event.context.asInstanceOf[Path]).toFile
@@ -349,10 +335,10 @@ private[play] class OptionalFileWatchServiceDelegate(val watchService: Try[FileW
  * mbean operation, so that the value can be retrieved.
  */
 private[runsupport] object GlobalStaticVar {
-  import javax.management._
-  import javax.management.modelmbean._
   import java.lang.management._
   import java.util.concurrent.atomic.AtomicReference
+  import javax.management._
+  import javax.management.modelmbean._
 
   private def objectName(name: String) = {
     new ObjectName(":type=GlobalStaticVar,name=" + name)

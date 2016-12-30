@@ -4,6 +4,7 @@
 package play.core.server
 
 import com.typesafe.config.ConfigFactory
+import play.api.ApplicationLoader.Context
 import play.api.http.{ DefaultHttpErrorHandler, Port }
 import play.api.routing.Router
 
@@ -12,6 +13,7 @@ import play.api._
 import play.api.mvc._
 import play.core.{ ApplicationProvider, DefaultWebCommands }
 import play.api.inject.DefaultApplicationLifecycle
+import play.api.libs.typedmap.TypedMap
 
 import scala.util.{ Failure, Success }
 import scala.concurrent.Future
@@ -48,14 +50,24 @@ trait Server extends ServerWithStop {
     try {
       applicationProvider.handleWebCommand(request) match {
         case Some(result) =>
+          // The ApplicationProvider handled the result
           Left(Future.successful(result))
         case None =>
+          // The ApplicationProvider didn't handle the result, so try
+          // handling it with the Application
           applicationProvider.get match {
             case Success(application) =>
-              application.requestHandler.handlerForRequest(request) match {
-                case (requestHeader, handler) => Right((requestHeader, handler, application))
-              }
-            case Failure(e) => logExceptionAndGetResult(e)
+              // We managed to get an Application, now make a fresh request
+              // using the Application's RequestFactory, then use the Application's
+              // logic to handle that request.
+              val factoryMadeHeader: RequestHeader = application.requestFactory.copyRequestHeader(request)
+              val (handlerHeader, handler) = application.requestHandler.handlerForRequest(factoryMadeHeader)
+              Right((handlerHeader, handler, application))
+            case Failure(e) =>
+              // The ApplicationProvider couldn't give us an application.
+              // This usually means there was a compile error or a problem
+              // starting the application.
+              logExceptionAndGetResult(e)
           }
       }
     } catch {
@@ -169,6 +181,41 @@ object Server {
       def router = Router.from(routes(self))
     }.application
     withApplication(application, config)(block)
+  }
+
+  /**
+   * Run a block of code with a server for the application containing routes.
+   *
+   * The passed in block takes the port that the application is running on. By default, this will be a random ephemeral
+   * port. This can be changed by passing in an explicit port with the config parameter.
+   *
+   * An easy way to set up an application with given routes is to use [[BuiltInComponentsFromContext]] with
+   * any extra components needed:
+   *
+   * {{{
+   *   Server.withApplicationFromContext(ServerConfig(mode = Mode.Prod, port = Some(0))) { context =>
+   *     new BuiltInComponentsFromContext(context) with AssetsComponents {
+   *      override def router: Router = Router.from {
+   *        case req => assets.versioned("/testassets", req.path)
+   *      }
+   *    }.application
+   *  } { withClient(block)(_) }
+   * }}}
+   *
+   * @param appProducer A function that takes an [[ApplicationLoader.Context]] and produces [[Application]]
+   * @param config The configuration for the server. Defaults to test config with the http port bound to a random
+   *               ephemeral port.
+   * @param block The block of code to run.
+   * @param provider The server provider.
+   * @return The result of the block of code.
+   */
+  def withApplicationFromContext[T](config: ServerConfig = ServerConfig(port = Some(0), mode = Mode.Test))(appProducer: ApplicationLoader.Context => Application)(block: Port => T)(implicit provider: ServerProvider): T = {
+    val context: Context = ApplicationLoader.Context(
+      Environment.simple(path = config.rootDir, mode = config.mode),
+      None, new DefaultWebCommands(), Configuration(ConfigFactory.load()),
+      new DefaultApplicationLifecycle
+    )
+    withApplication(appProducer(context), config)(block)
   }
 
 }

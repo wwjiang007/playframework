@@ -3,9 +3,10 @@
  */
 package play.api.mvc
 
-import javax.inject.{ Inject, Provider }
+import javax.inject.Inject
 
-import play.api.http.{ FlashConfiguration, HttpConfiguration, SessionConfiguration }
+import play.api.http.{ FlashConfiguration, HttpConfiguration, SecretConfiguration, SessionConfiguration }
+import play.api.libs.crypto.{ CookieSigner, CookieSignerProvider }
 import play.mvc.Http
 
 import scala.collection.JavaConverters._
@@ -76,12 +77,10 @@ trait FlashCookieBaker extends CookieBaker[Flash] {
 
   lazy val emptyCookie = new Flash
 
-  override def path = HttpConfiguration.current.context
+  override def path = config.path
   override def secure = config.secure
   override def httpOnly = config.httpOnly
   override def domain = sessionConfig.domain
-
-  override def cookieSigner = play.api.libs.Crypto.cookieSigner
 
   def deserialize(data: Map[String, String]) = new Flash(data)
 
@@ -89,13 +88,16 @@ trait FlashCookieBaker extends CookieBaker[Flash] {
 
 }
 
-class DefaultFlashCookieBaker @Inject() (val config: FlashConfiguration, val sessionConfig: SessionConfiguration)
+class DefaultFlashCookieBaker @Inject() (val config: FlashConfiguration, val sessionConfig: SessionConfiguration, val cookieSigner: CookieSigner)
     extends FlashCookieBaker {
-  def this() = this(FlashConfiguration(), SessionConfiguration())
+  def this() = this(FlashConfiguration(), SessionConfiguration(), new CookieSignerProvider(SecretConfiguration()).get)
 }
 
+@deprecated("Inject [[play.api.mvc.FlashCookieBaker]] instead", "2.6.0")
 object Flash extends FlashCookieBaker {
   def config = HttpConfiguration.current.flash
   def sessionConfig = HttpConfiguration.current.session
   def fromJavaFlash(javaFlash: play.mvc.Http.Flash): Flash = new Flash(javaFlash.asScala.toMap)
+  override def path = HttpConfiguration.current.context
+  override def cookieSigner = play.api.libs.Crypto.cookieSigner
 }

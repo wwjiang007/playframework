@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.mvc
 
@@ -119,7 +119,7 @@ class ResultsSpec extends Specification {
       setCookies("session").maxAge must beNone
       setCookies("preferences").value must be_==("blue")
       setCookies("lang").value must be_==("fr")
-      setCookies("logged").maxAge must beSome(0)
+      setCookies("logged").maxAge must beSome(Cookie.DiscardedMaxAge)
     }
 
     "provide convenience method for setting cookie header" in withApplication {

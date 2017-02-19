@@ -1,10 +1,10 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.libs
 
 import scala.io.Source
-import io.netty.handler.codec.http.QueryStringDecoder
+import play.shaded.ahc.io.netty.handler.codec.http.QueryStringDecoder
 import java.net.{ MalformedURLException, URL }
 import util.control.Exception._
 import collection.JavaConverters._

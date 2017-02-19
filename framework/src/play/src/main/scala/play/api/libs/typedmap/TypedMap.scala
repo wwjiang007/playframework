@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.libs.typedmap
 
@@ -25,7 +25,7 @@ trait TypedMap {
    * @param key The key for the value to retrieve.
    * @tparam A The type of value to retrieve.
    * @return The value, if it is present in the map.
-   * @throws NoSuchElementException If the value isn't present in the map.
+   * @throws scala.NoSuchElementException If the value isn't present in the map.
    */
   def apply[A](key: TypedKey[A]): A
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api
 
@@ -145,7 +145,6 @@ object Configuration {
 
   private[api] def configError(
     message: String, origin: Option[ConfigOrigin] = None, e: Option[Throwable] = None): PlayException = {
-    println(origin)
     /*
       The stable values here help us from putting a reference to a ConfigOrigin inside the anonymous ExceptionSource.
       This is necessary to keep the Exception serializable, because ConfigOrigin is not serializable.

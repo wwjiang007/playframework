@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.inject
 
@@ -53,7 +53,7 @@ class BuiltinModule extends SimpleModule((env, conf) => {
     bind[RequestFactory].to[DefaultRequestFactory],
     bind[TemporaryFileReaper].to[DefaultTemporaryFileReaper],
     bind[TemporaryFileCreator].to[DefaultTemporaryFileCreator],
-    bind[PlayBodyParsers].to[PlayBodyParsersImpl],
+    bind[PlayBodyParsers].to[DefaultPlayBodyParsers],
     bind[BodyParsers.Default].toSelf,
     bind[DefaultActionBuilder].to[DefaultActionBuilderImpl],
     bind[ControllerComponents].to[DefaultControllerComponents],

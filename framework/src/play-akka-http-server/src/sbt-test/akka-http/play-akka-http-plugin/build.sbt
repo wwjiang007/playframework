@@ -1,10 +1,9 @@
 //
-// Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+// Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
 //
 
 lazy val root = (project in file("."))
-  .enablePlugins(PlayScala, PlayAkkaHttpServer)
-  .disablePlugins(PlayNettyServer)
+  .enablePlugins(PlayScala)
 
 name := "compiled-class"
 

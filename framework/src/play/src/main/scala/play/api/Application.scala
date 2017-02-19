@@ -1,16 +1,17 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api
 
 import java.io._
 import javax.inject.Inject
 
-import akka.actor.{ ActorSystem, Props }
+import akka.actor.ActorSystem
 import akka.stream.{ ActorMaterializer, Materializer }
 import javax.inject.Singleton
 
 import play.api.http._
+import play.api.i18n.I18nComponents
 import play.api.inject.{ DefaultApplicationLifecycle, Injector, NewInstanceInjector, SimpleInjector }
 import play.api.libs.Files._
 import play.api.libs.concurrent.ActorSystemProvider
@@ -18,6 +19,7 @@ import play.api.libs.crypto._
 import play.api.mvc._
 import play.api.mvc.request.{ DefaultRequestFactory, RequestFactory }
 import play.api.routing.Router
+import play.core.j.JavaHelpers
 import play.core.{ SourceMapper, WebCommands }
 import play.utils._
 
@@ -136,9 +138,9 @@ trait Application {
    * The conf directory is included on the classpath, so this may be used to look up resources, relative to the conf
    * directory.
    *
-   * For example, to retrieve the conf/logger.xml configuration file:
+   * For example, to retrieve the conf/logback.xml configuration file:
    * {{{
-   * val maybeConf = application.resource("logger.xml")
+   * val maybeConf = application.resource("logback.xml")
    * }}}
    *
    * @param name the absolute name of the resource (from the classpath root)
@@ -156,9 +158,9 @@ trait Application {
    * The conf directory is included on the classpath, so this may be used to look up resources, relative to the conf
    * directory.
    *
-   * For example, to retrieve the conf/logger.xml configuration file:
+   * For example, to retrieve the conf/logback.xml configuration file:
    * {{{
-   * val maybeConf = application.resourceAsStream("logger.xml")
+   * val maybeConf = application.resourceAsStream("logback.xml")
    * }}}
    *
    * @param name the absolute name of the resource (from the classpath root)
@@ -181,6 +183,15 @@ trait Application {
    * @return The injector.
    */
   def injector: Injector = NewInstanceInjector
+
+  /**
+   * Returns true if the global application is enabled for this app. If set to false, this changes the behavior of
+   * Play.start, Play.current, and Play.maybeApplication to disallow access to the global application instance,
+   * also affecting the deprecated Play APIs that use these.
+   */
+  lazy val globalApplicationEnabled: Boolean = {
+    configuration.getOptional[Boolean](Play.GlobalAppConfigKey).getOrElse(true)
+  }
 }
 
 object Application {
@@ -234,7 +245,7 @@ class DefaultApplication @Inject() (
 /**
  * Helper to provide the Play built in components.
  */
-trait BuiltInComponents {
+trait BuiltInComponents extends I18nComponents {
   def environment: Environment
   def sourceMapper: Option[SourceMapper]
   def webCommands: WebCommands
@@ -271,4 +282,6 @@ trait BuiltInComponents {
   lazy val tempFileCreator: TemporaryFileCreator = new DefaultTemporaryFileCreator(applicationLifecycle, tempFileReaper)
 
   lazy val fileMimeTypes: FileMimeTypes = new DefaultFileMimeTypesProvider(httpConfiguration.fileMimeTypes).get
+
+  lazy val javaContextComponents = JavaHelpers.createContextComponents(messagesApi, langs, fileMimeTypes, httpConfiguration)
 }

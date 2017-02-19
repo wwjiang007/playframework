@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.mvc
 
@@ -284,7 +284,12 @@ trait BodyParsers {
   private def parserTemporaryFileCreator: TemporaryFileCreator = maybeApp.fold[TemporaryFileCreator](SingletonTemporaryFileCreator)(_.injector.instanceOf[TemporaryFileCreator])
 
   @deprecated("Inject PlayBodyParsers or use AbstractController instead", "2.6.0")
-  lazy val parse: PlayBodyParsers = PlayBodyParsers(parserConfig, parserErrorHandler, parserMaterializer, parserTemporaryFileCreator)
+  lazy val parse: PlayBodyParsers = new PlayBodyParsers {
+    override implicit def materializer = parserMaterializer
+    override def errorHandler = parserErrorHandler
+    override def config = parserConfig
+    override def temporaryFileCreator = parserTemporaryFileCreator
+  }
 }
 
 /**
@@ -364,20 +369,16 @@ trait BodyParserUtils {
     }
 }
 
-class PlayBodyParsersImpl(conf: => ParserConfiguration, eh: => HttpErrorHandler, mat: => Materializer, tfc: => TemporaryFileCreator) extends PlayBodyParsers {
-  def config = conf
-  def materializer = mat
-  def errorHandler = eh
-  def temporaryFileCreator = tfc
-
-  @Inject
-  def this(config: Provider[ParserConfiguration], eh: Provider[HttpErrorHandler], mat: Provider[Materializer], tfc: Provider[TemporaryFileCreator]) =
-    this(config.get, eh.get, mat.get, tfc.get)
-}
+class DefaultPlayBodyParsers @Inject() (
+  val config: ParserConfiguration,
+  val errorHandler: HttpErrorHandler,
+  val materializer: Materializer,
+  val temporaryFileCreator: TemporaryFileCreator) extends PlayBodyParsers
 
 object PlayBodyParsers {
-  def apply(conf: => ParserConfiguration, eh: => HttpErrorHandler, mat: => Materializer, tfc: => TemporaryFileCreator) =
-    new PlayBodyParsersImpl(conf, eh, mat, tfc)
+  def apply(conf: ParserConfiguration, eh: HttpErrorHandler, mat: Materializer, tfc: TemporaryFileCreator): PlayBodyParsers = {
+    new DefaultPlayBodyParsers(conf, eh, mat, tfc)
+  }
 }
 
 /**
@@ -698,6 +699,9 @@ trait PlayBodyParsers extends BodyParserUtils {
    */
   def default: BodyParser[AnyContent] = default(None)
 
+  // this is an alias method since "default" is a Java reserved word
+  def defaultBodyParser: BodyParser[AnyContent] = default
+
   /**
    * If the request has a body, parse the body content by checking the Content-Type header.
    */
@@ -766,7 +770,7 @@ trait PlayBodyParsers extends BodyParserUtils {
    */
   def multipartFormData[A](filePartHandler: Multipart.FilePartHandler[A], maxLength: Long = DefaultMaxDiskLength): BodyParser[MultipartFormData[A]] = {
     BodyParser("multipartFormData") { request =>
-      val bodyAccumulator = Multipart.multipartParser(DefaultMaxTextLength, filePartHandler).apply(request)
+      val bodyAccumulator = Multipart.multipartParser(DefaultMaxTextLength, filePartHandler, errorHandler).apply(request)
       enforceMaxLength(request, maxLength, bodyAccumulator)
     }
   }

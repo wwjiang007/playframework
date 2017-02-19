@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.cache
 
@@ -164,9 +164,7 @@ class CachedSpec extends PlaySpecification {
   }
 
   val dummyAction = Action { request: Request[_] =>
-    Results.Ok {
-      Random.nextInt().toString
-    }
+    Results.Ok(Random.nextInt().toString)
   }
 
   val notFoundAction = Action { request: Request[_] =>

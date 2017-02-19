@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.http
 
@@ -157,7 +157,7 @@ class DefaultHttpRequestHandler(router: Router, errorHandler: HttpErrorHandler, 
 
   /**
    * Update the given handler so that when the handler is run any filters will also be run. The
-   * default behavior is to wrap all [[EssentialAction]]s by calling `filterAction`, but to leave
+   * default behavior is to wrap all [[play.api.mvc.EssentialAction]]s by calling `filterAction`, but to leave
    * other kinds of handlers unchanged.
    */
   protected def filterHandler(request: RequestHeader, handler: Handler): Handler = {

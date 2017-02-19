@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.data
 
@@ -22,7 +22,7 @@ class DynamicFormSpec extends Specification {
   val messagesApi = new DefaultMessagesApi()
   implicit val messages = messagesApi.preferred(Seq.empty)
   val jMessagesApi = new play.i18n.MessagesApi(messagesApi)
-  val validator = Validation.buildDefaultValidatorFactory().getValidator()
+  val validator = FormSpec.validator()
 
   "a dynamic form" should {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.it
 
@@ -9,7 +9,7 @@ import org.specs2.specification.AroundEach
 import play.api.Application
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.core.server.{ NettyServer, ServerProvider }
-import play.core.server.akkahttp.AkkaHttpServer
+import play.core.server.AkkaHttpServer
 
 import scala.concurrent.duration._
 
@@ -26,11 +26,12 @@ trait ServerIntegrationSpecification extends PendingUntilFixed with AroundEach {
   parent =>
   implicit def integrationServerProvider: ServerProvider
 
-  /**
-   * Retry up to 3 times.
-   */
+  def aroundEventually[R: AsResult](r: => R) = {
+    EventuallyResults.eventually[R](1, 20.milliseconds)(r)
+  }
+
   def around[R: AsResult](r: => R) = {
-    AsResult(EventuallyResults.eventually(1, 20.milliseconds)(r))
+    AsResult(aroundEventually(r))
   }
 
   implicit class UntilAkkaHttpFixed[T: AsResult](t: => T) {
@@ -78,14 +79,16 @@ trait ServerIntegrationSpecification extends PendingUntilFixed with AroundEach {
 }
 
 trait NettyIntegrationSpecification extends ServerIntegrationSpecification {
+  self: Specification =>
+  // Provide a flag to disable Netty tests
+  private val runTests: Boolean = (System.getProperty("run.netty.http.tests", "true") == "true")
+  skipAllIf(!runTests)
+
   override def integrationServerProvider: ServerProvider = NettyServer.provider
 }
 
 trait AkkaHttpIntegrationSpecification extends ServerIntegrationSpecification {
   self: Specification =>
-  // Provide a flag to disable Akka HTTP tests
-  private val runTests: Boolean = (System.getProperty("run.akka.http.tests", "true") == "true")
-  skipAllIf(!runTests)
 
   override def integrationServerProvider: ServerProvider = AkkaHttpServer.provider
 }

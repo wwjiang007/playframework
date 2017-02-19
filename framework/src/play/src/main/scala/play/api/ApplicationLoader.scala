@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api
 
@@ -127,7 +127,6 @@ abstract class BuiltInComponentsFromContext(context: ApplicationLoader.Context) 
   lazy val configuration = context.initialConfiguration
   lazy val applicationLifecycle: DefaultApplicationLifecycle = context.lifecycle
 
-  lazy val javaContextComponents = JavaHelpers.createContextComponents(messagesApi, langs, fileMimeTypes, httpConfiguration)
   override lazy val injector: Injector = new SimpleInjector(NewInstanceInjector) + router + cookieSigner +
     csrfTokenSigner + httpConfiguration + tempFileCreator + messagesApi + langs + javaContextComponents + fileMimeTypes
 }

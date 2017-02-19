@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.inject.guice;
 
@@ -71,7 +71,7 @@ public class GuiceInjectorBuilderTest {
             .instanceOf(Config.class);
 
         assertThat(conf.root().keySet().size(), is(4));
-        assertThat(conf.root().keySet(), hasItems("a", "b", "c", "d"));
+        assertThat(conf.root().keySet(), org.junit.matchers.JUnitMatchers.hasItems("a", "b", "c", "d"));
 
         assertThat(conf.getInt("a"), is(1));
         assertThat(conf.getInt("b"), is(2));

@@ -1,4 +1,4 @@
-<!--- Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com> -->
+<!--- Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com> -->
 # Handling form submission
 
 ## Overview
@@ -136,15 +136,15 @@ You can find several input helpers in the [`views.html.helper`](api/scala/views/
 
 There are several input helpers, but the most helpful are:
 
-* [`form`](api/scala/views/html/helper/form$.html): renders a [form](http://www.w3.org/TR/html-markup/form.html#form) element.
-* [`inputText`](api/scala/views/html/helper/inputText$.html): renders a [text input](http://www.w3.org/TR/html-markup/input.text.html) element.
-* [`inputPassword`](api/scala/views/html/helper/inputPassword$.html): renders a [password input](http://www.w3.org/TR/html-markup/input.password.html#input.password) element.
-* [`inputDate`](api/scala/views/html/helper/inputDate$.html): renders a [date input](http://www.w3.org/TR/html-markup/input.date.html) element.
-* [`inputFile`](api/scala/views/html/helper/inputFile$.html): renders a [file input](http://www.w3.org/TR/html-markup/input.file.html) element.
-* [`inputRadioGroup`](api/scala/views/html/helper/inputRadioGroup$.html): renders a [radio input](http://www.w3.org/TR/html-markup/input.radio.html#input.radio) element.
-* [`select`](api/scala/views/html/helper/select$.html): renders a [select](http://www.w3.org/TR/html-markup/select.html#select) element.
-* [`textarea`](api/scala/views/html/helper/textarea$.html): renders a [textarea](http://www.w3.org/TR/html-markup/textarea.html#textarea) element.
-* [`checkbox`](api/scala/views/html/helper/checkbox$.html): renders a [checkbox](http://www.w3.org/TR/html-markup/input.checkbox.html#input.checkbox) element.
+* [`form`](api/scala/views/html/helper/form$.html): renders a [form](https://www.w3.org/TR/html/sec-forms.html#the-form-element) element.
+* [`inputText`](api/scala/views/html/helper/inputText$.html): renders a [text input](https://www.w3.org/TR/html/sec-forms.html#elementdef-input) element.
+* [`inputPassword`](api/scala/views/html/helper/inputPassword$.html): renders a [password input](https://www.w3.org/TR/html/sec-forms.html#element-statedef-input-password) element.
+* [`inputDate`](api/scala/views/html/helper/inputDate$.html): renders a [date input](https://www.w3.org/TR/html/sec-forms.html#element-statedef-input-date) element.
+* [`inputFile`](api/scala/views/html/helper/inputFile$.html): renders a [file input](https://www.w3.org/TR/html/sec-forms.html#file-upload-state-typefile) element.
+* [`inputRadioGroup`](api/scala/views/html/helper/inputRadioGroup$.html): renders a [radio input](https://www.w3.org/TR/html/sec-forms.html#element-statedef-input-radio-button) element.
+* [`select`](api/scala/views/html/helper/select$.html): renders a [select](https://www.w3.org/TR/html/sec-forms.html#the-select-element) element.
+* [`textarea`](api/scala/views/html/helper/textarea$.html): renders a [textarea](https://www.w3.org/TR/html/sec-forms.html#the-textarea-element) element.
+* [`checkbox`](api/scala/views/html/helper/checkbox$.html): renders a [checkbox](https://www.w3.org/TR/html/sec-forms.html#element-statedef-input-checkbox) element.
 * [`input`](api/scala/views/html/helper/input$.html): renders a generic input element (which requires explicit arguments).
 
 > **Note:** The source code for each of these templates is defined as Twirl templates under `views/helper` package, and so the packaged version corresponds to the generated Scala source code.  For reference, it can be useful to see the [`views/helper` ](https://github.com/playframework/playframework/tree/master/framework/src/play/src/main/scala/views/helper) package on Github.
@@ -208,6 +208,8 @@ The form errors are accessed on the bound form instance as follows:
 Errors attached to a field will render automatically using the form helpers, so `@helper.inputText` with errors can display as follows:
 
 @[form-user-generated](code/scalaguide/forms/scalaforms/views/user.scala.html)
+
+Errors that are not attached to a field can be converted to a string with `error.format`, which takes an implicit [play.api.i18n.Messages](api/scala/play/api/i18n/Messages.html) instance.
 
 Global errors that are not bound to a key do not have a helper and must be defined explicitly in the page:
 
@@ -306,20 +308,29 @@ You can populate a form with initial values using [`Form#fill`](api/scala/play/a
 
 Or you can define a default mapping on the number using [`Forms.default`](api/scala/play/api/data/Forms$.html):
 
-```
-Form(
-  mapping(
-    "name" -> default(text, "Bob")
-    "age" -> default(number, 18)
-  )(User.apply)(User.unapply)
-)
-```
+@[userForm-default](code/ScalaForms.scala)
 
 ### Ignored values
 
 If you want a form to have a static value for a field, use [`Forms.ignored`](api/scala/play/api/data/Forms$.html):
 
 @[userForm-static-value](code/ScalaForms.scala)
+
+### Custom binders for form mappings
+
+Each form mapping uses an implicitly provided [`Formatter[T]`](api/scala/play/api/data/format/Formatter.html) binder object that performs the conversion of incoming `String` form data to/from the target data type.
+
+@[userData-custom-datatype](code/ScalaForms.scala)
+
+To bind to a custom type like java.net.URL in the example above, define a form mapping like this:
+
+@[userForm-custom-datatype](code/ScalaForms.scala)
+
+For this to work you will need to make an implicit `Formatter[java.net.URL]` available to perform the data binding/unbinding.
+
+@[userForm-custom-formatter](code/ScalaForms.scala)
+
+Note the [`Formats.parsing`](api/scala/play/api/data/format/Formats$.html) function is used to capture any exceptions thrown in the act of converting a `String` to target type `T` and registers a [`FormError`](api/scala/play/api/data/FormError.html) on the form field binding.
 
 ## Putting it all together
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.test
 
@@ -130,8 +130,11 @@ object PlayRunners {
 }
 
 trait Writeables {
-  implicit def writeableOf_AnyContentAsJson(implicit codec: Codec): Writeable[AnyContentAsJson] =
-    Writeable.writeableOf_JsValue.map(c => c.json)
+  def writeableOf_AnyContentAsJson(codec: Codec, contentType: Option[String] = None): Writeable[AnyContentAsJson] =
+    Writeable.writeableOf_JsValue(codec, contentType).map(_.json)
+
+  implicit def writeableOf_AnyContentAsJson: Writeable[AnyContentAsJson] =
+    Writeable.writeableOf_JsValue.map(_.json)
 
   implicit def writeableOf_AnyContentAsXml(implicit codec: Codec): Writeable[AnyContentAsXml] =
     Writeable.writeableOf_NodeSeq.map(c => c.xml)

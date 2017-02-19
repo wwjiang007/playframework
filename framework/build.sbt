@@ -1,12 +1,13 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 
 import BuildSettings._
 import Dependencies._
 import Generators._
-import com.typesafe.tools.mima.plugin.MimaKeys.{ mimaPreviousArtifacts, mimaReportBinaryIssues }
+import com.typesafe.tools.mima.plugin.MimaKeys.{mimaPreviousArtifacts, mimaReportBinaryIssues}
 import interplay.PlayBuildBase.autoImport._
+import sbt.Keys.parallelExecution
 import sbt.ScriptedPlugin._
 import sbt._
 
@@ -90,14 +91,14 @@ lazy val PlayServerProject = PlayCrossBuiltProject("Play-Server", "play-server")
 lazy val PlayNettyServerProject = PlayCrossBuiltProject("Play-Netty-Server", "play-netty-server")
     .settings(libraryDependencies ++= netty)
     .dependsOn(PlayServerProject)
-
-lazy val PlayAkkaHttpServerProject = PlayCrossBuiltProject("Play-Akka-Http-Server-Experimental", "play-akka-http-server")
+    
+lazy val PlayAkkaHttpServerProject = PlayCrossBuiltProject("Play-Akka-Http-Server", "play-akka-http-server")
     .settings(libraryDependencies ++= akkaHttp)
     // Include scripted tests here as well as in the SBT Plugin, because we
     // don't want the SBT Plugin to have a dependency on an experimental module.
     //.settings(ScriptedPlugin.scriptedSettings ++ playScriptedSettings)
     .dependsOn(PlayServerProject, StreamsProject)
-    .dependsOn(PlaySpecs2Project % "test", PlayAhcWsProject % "test")
+    .dependsOn(PlayGuiceProject % "test")
 
 lazy val PlayJdbcApiProject = PlayCrossBuiltProject("Play-JDBC-Api", "play-jdbc-api")
     .dependsOn(PlayProject)
@@ -130,7 +131,7 @@ lazy val PlayTestProject = PlayCrossBuiltProject("Play-Test", "play-test")
       parallelExecution in Test := false
     ).dependsOn(
   PlayGuiceProject,
-  PlayNettyServerProject
+  PlayAkkaHttpServerProject
 )
 
 lazy val PlaySpecs2Project = PlayCrossBuiltProject("Play-Specs2", "play-specs2")
@@ -158,7 +159,7 @@ lazy val PlayDocsProject = PlayCrossBuiltProject("Play-Docs", "play-docs")
     .settings(Docs.settings: _*)
     .settings(
       libraryDependencies ++= playDocsDependencies
-    ).dependsOn(PlayNettyServerProject)
+    ).dependsOn(PlayAkkaHttpServerProject)
 
 lazy val PlayGuiceProject = PlayCrossBuiltProject("Play-Guice", "play-guice")
     .settings(libraryDependencies ++= guiceDeps ++ specsBuild.map(_ % "test"))
@@ -186,10 +187,18 @@ lazy val PlayLogback = PlayCrossBuiltProject("Play-Logback", "play-logback")
       parallelExecution in Test := false,
       // quieten deprecation warnings in tests
       scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
-    ).dependsOn(PlayProject)
+    )
+    .dependsOn(PlayProject)
+    .dependsOn(PlaySpecs2Project % "test")
 
 lazy val PlayWsProject = PlayCrossBuiltProject("Play-WS", "play-ws")
-  .dependsOn(PlayProject)
+    .settings(
+      libraryDependencies ++= playWsDeps,
+      parallelExecution in Test := false,
+      // quieten deprecation warnings in tests
+      scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
+  ).dependsOn(PlayProject)
+  .dependsOn(PlayTestProject % "test")
 
 lazy val PlayAhcWsProject = PlayCrossBuiltProject("Play-AHC-WS", "play-ahc-ws")
   .settings(
@@ -199,6 +208,7 @@ lazy val PlayAhcWsProject = PlayCrossBuiltProject("Play-AHC-WS", "play-ahc-ws")
     scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
   ).dependsOn(PlayWsProject, PlayJavaProject)
   .dependsOn(PlaySpecs2Project % "test")
+  .dependsOn(PlayTestProject % "compile->compile; test->test")
 
 lazy val PlayOpenIdProject = PlayCrossBuiltProject("Play-OpenID", "play-openid")
   .settings(
@@ -220,11 +230,18 @@ lazy val PlayIntegrationTestProject = PlayCrossBuiltProject("Play-Integration-Te
       parallelExecution in Test := false,
       mimaPreviousArtifacts := Set.empty
     )
-    .dependsOn(PlayProject % "test->test", PlayLogback % "test->test", PlayAhcWsProject % "test->test", PlaySpecs2Project)
+    .dependsOn(
+      PlayProject % "test->test",
+      PlayLogback % "test->test",
+      PlayAhcWsProject % "test->test",
+      PlayServerProject % "test->test",
+      PlaySpecs2Project
+    )
     .dependsOn(PlayFiltersHelpersProject)
     .dependsOn(PlayJavaProject)
     .dependsOn(PlayJavaFormsProject)
     .dependsOn(PlayAkkaHttpServerProject)
+    .dependsOn(PlayNettyServerProject)
 
 // This project is just for microbenchmarking Play, not really a public artifact
 lazy val PlayMicrobenchmarkProject = PlayCrossBuiltProject("Play-Microbenchmark", "play-microbenchmark")
@@ -236,7 +253,7 @@ lazy val PlayMicrobenchmarkProject = PlayCrossBuiltProject("Play-Microbenchmark"
     .dependsOn(PlayProject % "test->test", PlayLogback % "test->test", PlayAhcWsProject, PlaySpecs2Project)
     .dependsOn(PlayFiltersHelpersProject)
     .dependsOn(PlayJavaProject)
-    .dependsOn(PlayAkkaHttpServerProject)
+    .dependsOn(PlayNettyServerProject)
 
 lazy val PlayCacheProject = PlayCrossBuiltProject("Play-Cache", "play-cache")
     .settings(

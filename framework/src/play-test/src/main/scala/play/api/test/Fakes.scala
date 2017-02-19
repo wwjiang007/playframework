@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2016 Lightbend Inc. <https://www.lightbend.com>
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
 package play.api.test
 
@@ -158,7 +158,7 @@ class FakeRequest[A](request: Request[A]) extends Request[A] {
 
 /**
  * Object with helper methods for building [[FakeRequest]] values. This object uses a
- * [[DefaultRequestFactory]] with default configuration to build
+ * [[play.api.mvc.request.DefaultRequestFactory]] with default configuration to build
  * the requests.
  */
 object FakeRequest extends FakeRequestFactory(new DefaultRequestFactory(HttpConfiguration()))

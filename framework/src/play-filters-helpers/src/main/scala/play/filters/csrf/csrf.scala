@@ -12,6 +12,7 @@ import play.api._
 import play.api.http.{ HttpConfiguration, HttpErrorHandler }
 import play.api.inject.{ Binding, Module }
 import play.api.libs.crypto.CSRFTokenSigner
+import play.api.libs.typedmap.TypedKey
 import play.api.mvc.Results._
 import play.api.mvc._
 import play.core.j.{ JavaContextComponents, JavaHelpers }
@@ -85,7 +86,8 @@ object CSRFConfig {
   private def defaultCreateIfNotFound(request: RequestHeader) = {
     // If the request isn't accepting HTML, then it won't be rendering a form, so there's no point in generating a
     // CSRF token for it.
-    (request.method == "GET" || request.method == "HEAD") && (request.accepts("text/html") || request.accepts("application/xml+xhtml"))
+    import play.api.http.MimeTypes._
+    (request.method == "GET" || request.method == "HEAD") && (request.accepts(HTML) || request.accepts(XHTML))
   }
 
   private[play] val HeaderNoCheck = "nocheck"
@@ -163,21 +165,32 @@ object CSRF {
    */
   case class Token(name: String, value: String)
 
+  /**
+   * INTERNAL API: used for storing tokens on the request
+   */
+  case class TokenInfo(name: String, value: String, reSignedValue: Option[String] = None) {
+    def toToken = {
+      // Try to get the re-signed token first, then get the "new" token.
+      Token(name, reSignedValue getOrElse value)
+    }
+  }
+  object TokenInfo {
+    def apply(token: Token): TokenInfo = {
+      val Token(name, value) = token
+      TokenInfo(name, value)
+    }
+    def apply(token: Token, reSignedToken: String): TokenInfo = apply(token).copy(reSignedValue = Some(reSignedToken))
+  }
+
   object Token {
-    val NameRequestTag = "CSRF_TOKEN_NAME"
-    val RequestTag = "CSRF_TOKEN"
-    val ReSignedRequestTag = "CSRF_TOKEN_RE_SIGNED"
+    val InfoAttr = TypedKey[TokenInfo]("TOKEN_INFO")
   }
 
   /**
    * Extract token from current request
    */
   def getToken(implicit request: RequestHeader): Option[Token] = {
-    // Try to get the re-signed token first, then get the "new" token.
-    for {
-      name <- request.tags.get(Token.NameRequestTag)
-      value <- request.tags.get(Token.ReSignedRequestTag) orElse request.tags.get(Token.RequestTag)
-    } yield Token(name, value)
+    request.attrs.get(Token.InfoAttr).map(_.toToken)
   }
 
   /**
@@ -199,9 +212,7 @@ object CSRF {
     /** Generate a token */
     def generateToken: String
     /** Compare two tokens */
-    def compareTokens(tokenA: String, tokenB: String): Boolean = {
-      java.security.MessageDigest.isEqual(tokenA.getBytes("utf-8"), tokenB.getBytes("utf-8"))
-    }
+    def compareTokens(tokenA: String, tokenB: String): Boolean
   }
 
   class TokenProviderProvider @Inject() (config: CSRFConfig, tokenSigner: CSRFTokenSigner) extends Provider[TokenProvider] {
@@ -214,14 +225,19 @@ object CSRF {
   class ConfigTokenProvider(config: => CSRFConfig, tokenSigner: CSRFTokenSigner) extends TokenProvider {
     lazy val underlying = new TokenProviderProvider(config, tokenSigner).get
     def generateToken = underlying.generateToken
+    override def compareTokens(tokenA: String, tokenB: String) = underlying.compareTokens(tokenA, tokenB)
   }
 
   class SignedTokenProvider(tokenSigner: CSRFTokenSigner) extends TokenProvider {
     def generateToken = tokenSigner.generateSignedToken
+    def compareTokens(tokenA: String, tokenB: String) = tokenSigner.compareSignedTokens(tokenA, tokenB)
   }
 
   class UnsignedTokenProvider(tokenSigner: CSRFTokenSigner) extends TokenProvider {
     def generateToken = tokenSigner.generateToken
+    override def compareTokens(tokenA: String, tokenB: String) = {
+      java.security.MessageDigest.isEqual(tokenA.getBytes("utf-8"), tokenB.getBytes("utf-8"))
+    }
   }
 
   /**

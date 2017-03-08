@@ -7,7 +7,7 @@ import java.net.URI
 import java.security.cert.X509Certificate
 
 import akka.util.ByteString
-import play.api.http.HttpConfiguration
+import play.api.http.{ HeaderNames, HttpConfiguration }
 import play.api.libs.Files.{ SingletonTemporaryFileCreator, TemporaryFile }
 import play.api.libs.json.JsValue
 import play.api.libs.typedmap.TypedMap
@@ -112,8 +112,6 @@ class FakeRequest[A](request: Request[A]) extends Request[A] {
     withBody(body = AnyContentAsFormUrlEncoded(play.utils.OrderPreserving.groupBy(data.toSeq)(_._1)))
   }
 
-  def certs = Future.successful(IndexedSeq.empty)
-
   /**
    * Adds a JSON body to the request.
    */
@@ -146,7 +144,7 @@ class FakeRequest[A](request: Request[A]) extends Request[A] {
   /**
    * Adds a multipart form data body to the request
    */
-  def withMultipartFormDataBody(form: MultipartFormData[TemporaryFile]) = {
+  def withMultipartFormDataBody(form: MultipartFormData[TemporaryFile]): FakeRequest[AnyContentAsMultipartFormData] = {
     withBody(body = AnyContentAsMultipartFormData(form))
   }
 
@@ -174,18 +172,18 @@ class FakeRequestFactory(requestFactory: RequestFactory) {
    * Constructs a new GET / fake request.
    */
   def apply(): FakeRequest[AnyContentAsEmpty.type] = {
-    apply(method = "GET", uri = "/", headers = FakeHeaders(), body = AnyContentAsEmpty)
+    apply(method = "GET", uri = "/", headers = FakeHeaders(Seq(HeaderNames.HOST -> "localhost")), body = AnyContentAsEmpty)
   }
 
   /**
    * Constructs a new request.
    */
   def apply(method: String, path: String): FakeRequest[AnyContentAsEmpty.type] = {
-    apply(method = method, uri = path, headers = FakeHeaders(), body = AnyContentAsEmpty)
+    apply(method = method, uri = path, headers = FakeHeaders(Seq(HeaderNames.HOST -> "localhost")), body = AnyContentAsEmpty)
   }
 
   def apply(call: Call): FakeRequest[AnyContentAsEmpty.type] = {
-    apply(method = call.method, uri = call.url, headers = FakeHeaders(), body = AnyContentAsEmpty)
+    apply(method = call.method, uri = call.url, headers = FakeHeaders(Seq(HeaderNames.HOST -> "localhost")), body = AnyContentAsEmpty)
   }
 
   /**
@@ -216,7 +214,7 @@ class FakeRequestFactory(requestFactory: RequestFactory) {
       new RequestTarget {
         override lazy val uri: URI = new URI(uriString)
         override def uriString: String = _uri
-        override lazy val path = uriString.split('?').take(1).mkString
+        override lazy val path: String = uriString.split('?').take(1).mkString
         override lazy val queryMap: Map[String, Seq[String]] = FormUrlEncodedParser.parse(queryString)
       },
       version,

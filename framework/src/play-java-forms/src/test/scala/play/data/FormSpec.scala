@@ -17,6 +17,7 @@ import play.api.test.WithApplication
 import play.api.{ Configuration, Environment }
 import play.core.j.{ JavaContextComponents, JavaHelpers }
 import play.data.format.Formatters
+import play.data.validation.ValidationError
 import play.mvc.Http.{ Context, Request, RequestBuilder }
 import play.twirl.api.Html
 
@@ -59,10 +60,10 @@ class FormSpec extends Specification {
 
       val myForm = formFactory.form(classOf[play.data.models.Task]).bindFromRequest()
       myForm hasErrors () must beEqualTo(true)
-      myForm.errors.get("dueDate").get(0).messages().size() must beEqualTo(2)
-      myForm.errors.get("dueDate").get(0).messages().get(1) must beEqualTo("error.invalid.java.util.Date")
-      myForm.errors.get("dueDate").get(0).messages().get(0) must beEqualTo("error.invalid")
-      myForm.errors.get("dueDate").get(0).message() must beEqualTo("error.invalid.java.util.Date")
+      myForm.errors("dueDate").get(0).messages().size() must beEqualTo(2)
+      myForm.errors("dueDate").get(0).messages().get(1) must beEqualTo("error.invalid.java.util.Date")
+      myForm.errors("dueDate").get(0).messages().get(0) must beEqualTo("error.invalid")
+      myForm.errors("dueDate").get(0).message() must beEqualTo("error.invalid.java.util.Date")
 
       // make sure we can access the values of an invalid form
       myForm.value().get().getId() must beEqualTo(1234567891)
@@ -95,11 +96,11 @@ class FormSpec extends Specification {
 
       val myForm = formFactory.form(classOf[play.data.models.Task]).bindFromRequest()
       myForm hasErrors () must beEqualTo(true)
-      myForm.errors.get("dueDate").get(0).messages().size() must beEqualTo(3)
-      myForm.errors.get("dueDate").get(0).messages().get(2) must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
-      myForm.errors.get("dueDate").get(0).messages().get(1) must beEqualTo("error.invalid.java.util.Date") // is defined in play's default messages file
-      myForm.errors.get("dueDate").get(0).messages().get(0) must beEqualTo("error.invalid") // is defined in play's default messages file
-      myForm.errors.get("dueDate").get(0).message() must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
+      myForm.errors("dueDate").get(0).messages().size() must beEqualTo(3)
+      myForm.errors("dueDate").get(0).messages().get(2) must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
+      myForm.errors("dueDate").get(0).messages().get(1) must beEqualTo("error.invalid.java.util.Date") // is defined in play's default messages file
+      myForm.errors("dueDate").get(0).messages().get(0) must beEqualTo("error.invalid") // is defined in play's default messages file
+      myForm.errors("dueDate").get(0).message() must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
     }
     "have an error due to badly formatted date after using changeLang" in new WithApplication(GuiceApplicationBuilder().configure("play.i18n.langs" -> Seq("en", "en-US", "fr")).build()) {
       val contextComponents = app.injector.instanceOf[JavaContextComponents]
@@ -111,11 +112,11 @@ class FormSpec extends Specification {
 
       val myForm = formFactory.form(classOf[play.data.models.Task]).bindFromRequest()
       myForm hasErrors () must beEqualTo(true)
-      myForm.errors.get("dueDate").get(0).messages().size() must beEqualTo(3)
-      myForm.errors.get("dueDate").get(0).messages().get(2) must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
-      myForm.errors.get("dueDate").get(0).messages().get(1) must beEqualTo("error.invalid.java.util.Date") // is defined in play's default messages file
-      myForm.errors.get("dueDate").get(0).messages().get(0) must beEqualTo("error.invalid") // is defined in play's default messages file
-      myForm.errors.get("dueDate").get(0).message() must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
+      myForm.errors("dueDate").get(0).messages().size() must beEqualTo(3)
+      myForm.errors("dueDate").get(0).messages().get(2) must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
+      myForm.errors("dueDate").get(0).messages().get(1) must beEqualTo("error.invalid.java.util.Date") // is defined in play's default messages file
+      myForm.errors("dueDate").get(0).messages().get(0) must beEqualTo("error.invalid") // is defined in play's default messages file
+      myForm.errors("dueDate").get(0).message() must beEqualTo("error.invalid.dueDate") // is ONLY defined in messages.fr
     }
     "have an error due to missing required value" in new WithApplication() {
       val contextComponents = app.injector.instanceOf[JavaContextComponents]
@@ -125,7 +126,7 @@ class FormSpec extends Specification {
 
       val myForm = formFactory.form(classOf[play.data.models.Task]).bindFromRequest()
       myForm hasErrors () must beEqualTo(true)
-      myForm.errors.get("dueDate").get(0).messages().asScala must contain("error.required")
+      myForm.errors("dueDate").get(0).messages().asScala must contain("error.required")
     }
     "have an error due to bad value in Id field" in new WithApplication() {
       val contextComponents = app.injector.instanceOf[JavaContextComponents]
@@ -135,7 +136,7 @@ class FormSpec extends Specification {
 
       val myForm = formFactory.form(classOf[play.data.models.Task]).bindFromRequest()
       myForm hasErrors () must beEqualTo(true)
-      myForm.errors.get("id").get(0).messages().asScala must contain("error.invalid")
+      myForm.errors("id").get(0).messages().asScala must contain("error.invalid")
     }
     "be valid with default date binder" in {
       val req = FormSpec.dummyRequest(Map("id" -> Array("1234567891"), "name" -> Array("peter"), "dueDate" -> Array("15/12/2009"), "endDate" -> Array("2008-11-21")))
@@ -152,7 +153,7 @@ class FormSpec extends Specification {
 
       val myForm = formFactory.form(classOf[play.data.models.Task]).bindFromRequest()
       myForm hasErrors () must beEqualTo(true)
-      myForm.errors.get("endDate").get(0).messages().asScala must contain("error.invalid.java.util.Date")
+      myForm.errors("endDate").get(0).messages().asScala must contain("error.invalid.java.util.Date")
     }
 
     "support repeated values for Java binding" in {
@@ -211,9 +212,9 @@ class FormSpec extends Specification {
 
     "support email validation" in {
       val userEmail = formFactory.form(classOf[UserEmail])
-      userEmail.bind(Map("email" -> "john@example.com").asJava).errors().asScala must beEmpty
-      userEmail.bind(Map("email" -> "o'flynn@example.com").asJava).errors().asScala must beEmpty
-      userEmail.bind(Map("email" -> "john@ex'ample.com").asJava).errors().asScala must not(beEmpty)
+      userEmail.bind(Map("email" -> "john@example.com").asJava).allErrors().asScala must beEmpty
+      userEmail.bind(Map("email" -> "o'flynn@example.com").asJava).allErrors().asScala must beEmpty
+      userEmail.bind(Map("email" -> "john@ex'ample.com").asJava).allErrors().asScala must not(beEmpty)
     }
 
     "support custom validators" in {
@@ -229,8 +230,8 @@ class FormSpec extends Specification {
         val form = formFactory.form(classOf[MyBlueUser]).bind(
           Map("name" -> "Shrek", "skinColor" -> "green", "hairColor" -> "blue").asJava)
         form.hasErrors must beEqualTo(true)
-        form.errors().get("hairColor") must beNull
-        val validationErrors = form.errors().get("skinColor")
+        form.errors("hairColor").asScala must beEmpty
+        val validationErrors = form.errors("skinColor")
         validationErrors.size() must beEqualTo(1)
         validationErrors.get(0).message must beEqualTo("notblue")
       }
@@ -238,9 +239,9 @@ class FormSpec extends Specification {
       "that returns customized message in annotation when validator fails" in {
         val form = formFactory.form(classOf[MyBlueUser]).bind(
           Map("name" -> "Smurf", "skinColor" -> "blue", "hairColor" -> "white").asJava)
-        form.errors().get("skinColor") must beNull
+        form.errors("skinColor").asScala must beEmpty
         form.hasErrors must beEqualTo(true)
-        val validationErrors = form.errors().get("hairColor")
+        val validationErrors = form.errors("hairColor")
         validationErrors.size() must beEqualTo(1)
         validationErrors.get(0).message must beEqualTo("i-am-blue")
       }
@@ -257,16 +258,6 @@ class FormSpec extends Specification {
         val b = f("b")
         Html(s"${a.name}=${a.value.getOrElse("")},${b.name}=${b.value.getOrElse("")}")
       }.map(_.toString)
-
-      def fillNoBind(values: (String, String)*) = {
-        val map = values.zipWithIndex.flatMap {
-          case ((a, b), i) => Seq("foo[" + i + "].a" -> a, "foo[" + i + "].b" -> b)
-        }.toMap
-        // Don't use bind, the point here is to have a form with data that isn't bound, otherwise the mapping indexes
-        // used come from the form, not the input data
-        new Form[JavaForm](null, classOf[JavaForm], map.asJava,
-          Map.empty.asJava, Optional.empty[JavaForm], null, null, FormSpec.validator())
-      }
 
       "render the right number of fields if there's multiple sub fields at a given index when filled from a value" in {
         render(
@@ -294,6 +285,55 @@ class FormSpec extends Specification {
         ) must exactly("foo[0].a=a,foo[0].b=b", "foo[1].a=c,foo[1].b=d",
             "foo[2].a=e,foo[2].b=f", "foo[3].a=g,foo[3].b=h").inOrder
       }
+    }
+
+    "work with the @repeatWithIndex helper" in {
+      val form = formFactory.form(classOf[JavaForm])
+
+      import play.core.j.PlayFormsMagicForJava._
+
+      def render(form: Form[_], min: Int = 1) = views.html.helper.repeatWithIndex.apply(form("foo"), min) { (f, i) =>
+        val a = f("a")
+        val b = f("b")
+        Html(s"${a.name}=${a.value.getOrElse("")}${i},${b.name}=${b.value.getOrElse("")}${i}")
+      }.map(_.toString)
+
+      "render the right number of fields if there's multiple sub fields at a given index when filled from a value" in {
+        render(
+          form.fill(new JavaForm(List(new JavaSubForm("somea", "someb")).asJava))
+        ) must exactly("foo[0].a=somea0,foo[0].b=someb0")
+      }
+
+      "render the right number of fields if there's multiple sub fields at a given index when filled from a form" in {
+        render(
+          fillNoBind("somea" -> "someb")
+        ) must exactly("foo[0].a=somea0,foo[0].b=someb0")
+      }
+
+      "get the order of the fields correct when filled from a value" in {
+        render(
+          form.fill(new JavaForm(List(new JavaSubForm("a", "b"), new JavaSubForm("c", "d"),
+            new JavaSubForm("e", "f"), new JavaSubForm("g", "h")).asJava))
+        ) must exactly("foo[0].a=a0,foo[0].b=b0", "foo[1].a=c1,foo[1].b=d1",
+            "foo[2].a=e2,foo[2].b=f2", "foo[3].a=g3,foo[3].b=h3").inOrder
+      }
+
+      "get the order of the fields correct when filled from a form" in {
+        render(
+          fillNoBind("a" -> "b", "c" -> "d", "e" -> "f", "g" -> "h")
+        ) must exactly("foo[0].a=a0,foo[0].b=b0", "foo[1].a=c1,foo[1].b=d1",
+            "foo[2].a=e2,foo[2].b=f2", "foo[3].a=g3,foo[3].b=h3").inOrder
+      }
+    }
+
+    def fillNoBind(values: (String, String)*) = {
+      val map = values.zipWithIndex.flatMap {
+        case ((a, b), i) => Seq("foo[" + i + "].a" -> a, "foo[" + i + "].b" -> b)
+      }.toMap
+      // Don't use bind, the point here is to have a form with data that isn't bound, otherwise the mapping indexes
+      // used come from the form, not the input data
+      new Form[JavaForm](null, classOf[JavaForm], map.asJava,
+        List.empty.asJava.asInstanceOf[java.util.List[ValidationError]], Optional.empty[JavaForm], null, null, FormSpec.validator())
     }
 
     "return the appropriate constraints for the desired validation group(s)" in {

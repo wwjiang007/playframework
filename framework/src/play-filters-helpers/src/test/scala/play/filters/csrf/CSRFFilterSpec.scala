@@ -46,6 +46,9 @@ class CSRFFilterSpec extends CSRFCommonSpecs {
     "add a token to GET requests that accept HTML" in {
       buildCsrfAddToken()(_.withHeaders(ACCEPT -> "text/html").get())(_.status must_== OK)
     }
+    "add a token to GET requests that accept XHTML" in {
+      buildCsrfAddToken()(_.withHeaders(ACCEPT -> "application/xhtml+xml").get())(_.status must_== OK)
+    }
     "not add a token to HEAD requests that don't accept HTML" in {
       buildCsrfAddToken()(_.withHeaders(ACCEPT -> "application/json").head())(_.status must_== NOT_FOUND)
     }
@@ -81,7 +84,7 @@ class CSRFFilterSpec extends CSRFCommonSpecs {
               .map(Results.Ok(_))
               .getOrElse(Results.NotFound))
       }){ ws =>
-        val token = crypto.generateSignedToken
+        val token = signedTokenProvider.generateToken
         await(ws.url("http://localhost:" + testServerPort).withSession(TokenName -> token)
           .post(Map("foo" -> "bar", TokenName -> token))).body must_== "bar"
       }
@@ -112,7 +115,7 @@ class CSRFFilterSpec extends CSRFCommonSpecs {
       .build()
 
     "feed a not fully buffered body once a check has been done and passes" in new WithServer(notBufferedFakeApp, testServerPort) {
-      val token = crypto.generateSignedToken
+      val token = signedTokenProvider.generateToken
       val ws = inject[WSClient]
       val response = await(ws.url("http://localhost:" + port).withSession(TokenName -> token)
         .withHeaders(CONTENT_TYPE -> "application/x-www-form-urlencoded")
@@ -134,10 +137,10 @@ class CSRFFilterSpec extends CSRFCommonSpecs {
     "work with a Java error handler" in {
       def csrfCheckRequest = buildCsrfCheckRequestWithJavaHandler()
       def csrfAddToken = buildCsrfAddToken("csrf.cookie.name" -> "csrf")
-      def generate = crypto.generateSignedToken
+      def generate = signedTokenProvider.generateToken
       def addToken(req: WSRequest, token: String) = req.withCookies("csrf" -> token)
       def getToken(response: WSResponse) = response.cookies.find(_.name.exists(_ == "csrf")).flatMap(_.value)
-      def compareTokens(a: String, b: String) = crypto.compareSignedTokens(a, b) must beTrue
+      def compareTokens(a: String, b: String) = signedTokenProvider.compareTokens(a, b) must beTrue
 
       sharedTests(csrfCheckRequest, csrfAddToken, generate, addToken, getToken, compareTokens, UNAUTHORIZED)
     }

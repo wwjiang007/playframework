@@ -208,7 +208,7 @@ lazy val PlayAhcWsProject = PlayCrossBuiltProject("Play-AHC-WS", "play-ahc-ws")
     scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
   ).dependsOn(PlayWsProject, PlayJavaProject)
   .dependsOn(PlaySpecs2Project % "test")
-  .dependsOn(PlayTestProject % "compile->compile; test->test")
+  .dependsOn(PlayTestProject % "test->test")
 
 lazy val PlayOpenIdProject = PlayCrossBuiltProject("Play-OpenID", "play-openid")
   .settings(
@@ -221,7 +221,8 @@ lazy val PlayOpenIdProject = PlayCrossBuiltProject("Play-OpenID", "play-openid")
 lazy val PlayFiltersHelpersProject = PlayCrossBuiltProject("Filters-Helpers", "play-filters-helpers")
     .settings(
       parallelExecution in Test := false
-    ).dependsOn(PlayProject, PlayJavaProject % "test", PlaySpecs2Project % "test", PlayAhcWsProject % "test")
+    ).dependsOn(PlayProject, PlayTestProject,
+        PlayJavaProject % "test", PlaySpecs2Project % "test", PlayAhcWsProject % "test")
 
 // This project is just for testing Play, not really a public artifact
 lazy val PlayIntegrationTestProject = PlayCrossBuiltProject("Play-Integration-Test", "play-integration-test")

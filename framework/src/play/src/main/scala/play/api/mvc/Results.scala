@@ -252,7 +252,7 @@ case class Result(header: ResponseHeader, body: HttpEntity,
    * Logs a redirect warning for flashing (in dev mode) if the status code is not 3xx
    */
   @inline private def warnFlashingIfNotRedirect(flash: Flash): Unit = {
-    if (!flash.isEmpty && header.status / 100 == 3) {
+    if (!flash.isEmpty && !Status.isRedirect(header.status)) {
       Logger("play").forMode(Mode.Dev).warn(
         s"You are using status code '${header.status}' with flashing, which should only be used with a redirect status!"
       )
@@ -611,7 +611,7 @@ trait Results {
   val TooManyRequests = new Status(TOO_MANY_REQUESTS)
 
   /** Generates a ‘429 TOO_MANY_REQUEST’ result. */
-  @deprecated("Use TooManyRequests instead", "3.0.0")
+  @deprecated("Use TooManyRequests instead", "2.6.0")
   val TooManyRequest = TooManyRequests
 
   /** Generates a ‘500 INTERNAL_SERVER_ERROR’ result. */

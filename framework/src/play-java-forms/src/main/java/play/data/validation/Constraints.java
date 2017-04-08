@@ -16,6 +16,8 @@ import java.lang.reflect.Constructor;
 import javax.validation.*;
 import javax.validation.metadata.*;
 
+import org.hibernate.validator.constraintvalidation.HibernateConstraintValidatorContext;
+
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -97,7 +99,7 @@ public class Constraints {
     /**
      * Defines a field as required.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = RequiredValidator.class)
     @play.data.Form.Display(name="constraint.required")
@@ -151,7 +153,7 @@ public class Constraints {
     /**
      * Defines a minimum value for a numeric field.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = MinValidator.class)
     @play.data.Form.Display(name="constraint.min", attributes={"value"})
@@ -209,7 +211,7 @@ public class Constraints {
     /**
      * Defines a maximum value for a numeric field.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = MaxValidator.class)
     @play.data.Form.Display(name="constraint.max", attributes={"value"})
@@ -267,7 +269,7 @@ public class Constraints {
     /**
      * Defines a minimum length for a string field.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = MinLengthValidator.class)
     @play.data.Form.Display(name="constraint.minLength", attributes={"value"})
@@ -324,7 +326,7 @@ public class Constraints {
     /**
      * Defines a maximum length for a string field.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = MaxLengthValidator.class)
     @play.data.Form.Display(name="constraint.maxLength", attributes={"value"})
@@ -381,7 +383,7 @@ public class Constraints {
     /**
      * Defines a email constraint for a string field.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = EmailValidator.class)
     @play.data.Form.Display(name="constraint.email", attributes={})
@@ -432,7 +434,7 @@ public class Constraints {
     /**
      * Defines a pattern constraint for a string field.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = PatternValidator.class)
     @play.data.Form.Display(name="constraint.pattern", attributes={"value"})
@@ -484,10 +486,12 @@ public class Constraints {
         return new PatternValidator(regex);
     }
 
+    // --- validate fields with custom validator
+    
      /**
      * Defines a custom validator.
      */
-    @Target({FIELD})
+    @Target({METHOD, FIELD, ANNOTATION_TYPE, CONSTRUCTOR, PARAMETER, TYPE_USE})
     @Retention(RUNTIME)
     @Constraint(validatedBy = ValidateWithValidator.class)
     @play.data.Form.Display(name="constraint.validatewith", attributes={})
@@ -547,4 +551,47 @@ public class Constraints {
 
     }
 
+    // --- class level helpers
+
+    @Target({TYPE, ANNOTATION_TYPE})
+    @Retention(RUNTIME)
+    @Constraint(validatedBy = ValidateValidator.class)
+    public static @interface Validate {
+        String message() default "error.invalid";
+        Class<?>[] groups() default {};
+        Class<? extends Payload>[] payload() default {};
+    }
+
+    public static interface Validatable<T> {
+        public T validate();
+    }
+
+    public static class ValidateValidator implements PlayConstraintValidator<Validate, Validatable<?>> {
+
+        @Override
+        public void initialize(final Validate constraintAnnotation) {
+        }
+
+        @Override
+        public boolean isValid(final Validatable<?> value, final ConstraintValidatorContext constraintValidatorContext) {
+            return reportValidationStatus(value.validate(), constraintValidatorContext);
+        }
+    }
+
+    public interface PlayConstraintValidator<A extends Annotation, T> extends ConstraintValidator<A, T> {
+
+        default boolean validationSuccessful(final Object validationResult) {
+            return validationResult == null || (validationResult instanceof List && ((List<?>)validationResult).isEmpty());
+        }
+
+        default boolean reportValidationStatus(final Object validationResult, final ConstraintValidatorContext constraintValidatorContext) {
+            if(validationSuccessful(validationResult)) {
+                return true;
+            }
+            constraintValidatorContext
+                .unwrap(HibernateConstraintValidatorContext.class)
+                .withDynamicPayload(validationResult);
+            return false;
+        }
+    }
 }

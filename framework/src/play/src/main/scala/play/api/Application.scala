@@ -12,7 +12,7 @@ import javax.inject.Singleton
 
 import play.api.http._
 import play.api.i18n.I18nComponents
-import play.api.inject.{ DefaultApplicationLifecycle, Injector, NewInstanceInjector, SimpleInjector }
+import play.api.inject._
 import play.api.libs.Files._
 import play.api.libs.concurrent.ActorSystemProvider
 import play.api.libs.crypto._
@@ -96,6 +96,15 @@ trait Application {
    * The HTTP error handler
    */
   def errorHandler: HttpErrorHandler
+
+  /**
+   * Return the application as a Java application.
+   *
+   * @see [[play.Application]]
+   */
+  def asJava: play.Application = {
+    new play.DefaultApplication(this, configuration.underlying, injector.asJava)
+  }
 
   /**
    * Retrieves a file relative to the application root path.
@@ -226,7 +235,7 @@ class OptionalSourceMapper(val sourceMapper: Option[SourceMapper])
 @Singleton
 class DefaultApplication @Inject() (
     override val environment: Environment,
-    applicationLifecycle: DefaultApplicationLifecycle,
+    applicationLifecycle: ApplicationLifecycle,
     override val injector: Injector,
     override val configuration: Configuration,
     override val requestFactory: RequestFactory,
@@ -235,11 +244,11 @@ class DefaultApplication @Inject() (
     override val actorSystem: ActorSystem,
     override val materializer: Materializer) extends Application {
 
-  def path = environment.rootPath
+  override def path: File = environment.rootPath
 
-  def classloader = environment.classLoader
+  override def classloader: ClassLoader = environment.classLoader
 
-  def stop() = applicationLifecycle.stop()
+  override def stop(): Future[_] = applicationLifecycle.stop()
 }
 
 /**

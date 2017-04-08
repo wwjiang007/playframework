@@ -395,6 +395,11 @@ trait MessagesApi {
   def langCookieSecure: Boolean
 
   def langCookieHttpOnly: Boolean
+
+  /**
+   * @return The Java version for Messages API.
+   */
+  def asJava: play.i18n.MessagesApi = new play.i18n.MessagesApi(this)
 }
 
 /**
@@ -416,7 +421,7 @@ class DefaultMessagesApi @Inject() (
   }
 
   override def preferred(request: Http.RequestHeader): Messages = {
-    preferred(request._underlyingHeader())
+    preferred(request.asScala())
   }
 
   override def preferred(request: RequestHeader): Messages = {

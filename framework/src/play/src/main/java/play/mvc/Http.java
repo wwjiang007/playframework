@@ -29,7 +29,7 @@ import play.libs.Scala;
 import play.libs.XML;
 import play.libs.typedmap.TypedKey;
 import play.libs.typedmap.TypedMap;
-import scala.collection.Seq;
+import play.mvc.Http.Cookie.SameSite;
 import scala.collection.immutable.Map$;
 import scala.compat.java8.OptionConverters;
 
@@ -45,8 +45,6 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
-
-import static play.libs.Scala.asScala;
 
 /**
  * Defines HTTP standard objects.
@@ -103,7 +101,7 @@ public class Http {
          */
         public Context(Request request, JavaContextComponents components) {
             this.request = request;
-            this.header = request._underlyingHeader();
+            this.header = request.asScala();
             this.id = header.id();
             this.response = new Response();
             this.session = new Session(Scala.asJava(header.session().data()));
@@ -245,7 +243,9 @@ public class Http {
                         sessionPath(),
                         domain.isDefined() ? domain.get() : null,
                         messagesApi().langCookieSecure(),
-                        messagesApi().langCookieHttpOnly());
+                        messagesApi().langCookieHttpOnly(),
+                        SameSite.LAX
+                    );
                 response.setCookie(langCookie);
                 return true;
             } else {
@@ -486,7 +486,7 @@ public class Http {
         }
     }
 
-    public static interface RequestHeader {
+    public interface RequestHeader {
 
         /**
          * The complete request URI, containing both path and query string.
@@ -538,6 +538,15 @@ public class Http {
          * @return The new version of this object with the attributes attached.
          */
         RequestHeader withAttrs(TypedMap newAttrs);
+
+        /**
+         * Create a new versions of this object with the given attribute attached to it.
+         *
+         * @param key The new attribute key.
+         * @param value  The attribute value.
+         * @return The new version of this object with the new attribute.
+         */
+        <A> RequestHeader addAttr(TypedKey<A> key, A value);
 
         /**
          * Attach a body to this header.
@@ -669,14 +678,23 @@ public class Http {
          * For internal Play-use only
          *
          * @return the underlying request
+         * @deprecated As of release 2.6.0. Use {@link #asScala()}
          */
+        @Deprecated
         play.api.mvc.RequestHeader _underlyingHeader();
+
+        /**
+         * Return the Scala version of the request header.
+         *
+         * @see play.api.mvc.RequestHeader
+         */
+        play.api.mvc.RequestHeader asScala();
     }
 
     /**
      * An HTTP request.
      */
-    public static interface Request extends RequestHeader {
+    public interface Request extends RequestHeader {
 
         /**
          * The request body.
@@ -689,6 +707,9 @@ public class Http {
 
         // Override return type
         Request withAttrs(TypedMap newAttrs);
+
+        // Override return type
+        <A> Request addAttr(TypedKey<A> key, A value);
 
         /**
          * The user name for this request, if defined.
@@ -712,8 +733,18 @@ public class Http {
          * For internal Play-use only
          *
          * @return the underlying request
+         * @deprecated As of release 2.6.0. Use {@link #asScala()}
          */
+        @Deprecated
         play.api.mvc.Request<RequestBody> _underlyingRequest();
+
+        /**
+         * Return the Scala version of the request
+         *
+         * @return the underlying request.
+         * @see play.api.mvc.Request
+         */
+        play.api.mvc.Request<RequestBody> asScala();
     }
 
     /**
@@ -1025,9 +1056,10 @@ public class Http {
          * @param key The key of the attribute to add.
          * @param value The value of the attribute to add.
          * @param <T> The type of the attribute to add.
+         * @return the request builder with extra attribute
          */
         public <T> RequestBuilder attr(TypedKey<T> key, T value) {
-            req = req.withAttrs(req.attrs().updated(key.underlying(), value));
+            req = req.addAttr(key.underlying(), value);
             return this;
         }
 
@@ -1035,6 +1067,7 @@ public class Http {
          * Update the request attributes. This replaces all existing attributes.
          *
          * @param newAttrs The attribute entries to add.
+         * @return the request builder with extra attributes set.
          */
         public RequestBuilder attrs(TypedMap newAttrs) {
             req = req.withAttrs(newAttrs.underlying());
@@ -1043,6 +1076,7 @@ public class Http {
 
         /**
          * Get the request attributes.
+         * @return the request builder's request attributes.
          */
         public TypedMap attrs() {
             return new TypedMap(req.attrs());
@@ -1308,7 +1342,7 @@ public class Http {
          * @return the builder instance
          */
         public RequestBuilder flash(Map<String,String> data) {
-            play.api.mvc.Flash flash = new play.api.mvc.Flash(asScala(data));
+            play.api.mvc.Flash flash = new play.api.mvc.Flash(Scala.asScala(data));
             attr(new TypedKey(RequestAttrKey.Flash()), new AssignedCell(flash));
             return this;
         }
@@ -1340,7 +1374,7 @@ public class Http {
          * @return the builder instance
          */
         public RequestBuilder session(Map<String,String> data) {
-            play.api.mvc.Session session = new play.api.mvc.Session(asScala(data));
+            play.api.mvc.Session session = new play.api.mvc.Session(Scala.asScala(data));
               attr(new TypedKey(RequestAttrKey.Session()), new AssignedCell(session));
             return this;
         }
@@ -1776,10 +1810,13 @@ public class Http {
          * @param domain Cookie domain
          * @param secure Whether the cookie is secured (for HTTPS requests)
          * @param httpOnly Whether the cookie is HTTP only (i.e. not accessible from client-side JavaScript code)
+         * @param sameSite The SameSite value (Strict or Lax)
          * @deprecated Use {@link #setCookie(Http.Cookie)} instead.
          */
-        public void setCookie(String name, String value, Integer maxAge, String path, String domain, boolean secure, boolean httpOnly) {
-            cookies.add(new Cookie(name, value, maxAge, path, domain, secure, httpOnly));
+        public void setCookie(
+                String name, String value, Integer maxAge, String path, String domain,
+                boolean secure, boolean httpOnly, SameSite sameSite) {
+            cookies.add(new Cookie(name, value, maxAge, path, domain, secure, httpOnly, sameSite));
         }
 
         /**
@@ -1830,7 +1867,7 @@ public class Http {
          * @param secure Whether the cookie to discard is secure
          */
         public void discardCookie(String name, String path, String domain, boolean secure) {
-            cookies.add(new Cookie(name, "", play.api.mvc.Cookie.DiscardedMaxAge(), path, domain, secure, false));
+            cookies.add(new Cookie(name, "", play.api.mvc.Cookie.DiscardedMaxAge(), path, domain, secure, false, null));
         }
 
         public Collection<Cookie> cookies() {
@@ -1956,9 +1993,22 @@ public class Http {
         private final String domain;
         private final boolean secure;
         private final boolean httpOnly;
+        private final SameSite sameSite;
 
+        /**
+         * Construct a new cookie. Prefer {@link Cookie#builder} for creating new cookies in your application.
+         *
+         * @param name Cookie name, must not be null
+         * @param value Cookie value
+         * @param maxAge Cookie duration in seconds (null for a transient cookie, 0 or less for one that expires now)
+         * @param path Cookie path
+         * @param domain Cookie domain
+         * @param secure Whether the cookie is secured (for HTTPS requests)
+         * @param httpOnly Whether the cookie is HTTP only (i.e. not accessible from client-side JavaScript code)
+         * @param sameSite the SameSite attribute for this cookie (for CSRF protection).
+         */
         public Cookie(String name, String value, Integer maxAge, String path,
-                      String domain, boolean secure, boolean httpOnly) {
+                      String domain, boolean secure, boolean httpOnly, SameSite sameSite) {
             this.name = name;
             this.value = value;
             this.maxAge = maxAge;
@@ -1966,6 +2016,23 @@ public class Http {
             this.domain = domain;
             this.secure = secure;
             this.httpOnly = httpOnly;
+            this.sameSite = sameSite;
+        }
+
+        /**
+         * @param name Cookie name, must not be null
+         * @param value Cookie value
+         * @param maxAge Cookie duration in seconds (null for a transient cookie, 0 or less for one that expires now)
+         * @param path Cookie path
+         * @param domain Cookie domain
+         * @param secure Whether the cookie is secured (for HTTPS requests)
+         * @param httpOnly Whether the cookie is HTTP only (i.e. not accessible from client-side JavaScript code)
+         * @deprecated as of 2.6.0. Use {@link Cookie#builder}.
+         */
+        @Deprecated
+        public Cookie(String name, String value, Integer maxAge, String path,
+            String domain, boolean secure, boolean httpOnly) {
+            this(name, value, maxAge, path, domain, secure, httpOnly, null);
         }
 
         /**
@@ -2027,6 +2094,42 @@ public class Http {
             return httpOnly;
         }
 
+        /**
+         * @return the SameSite attribute for this cookie
+         */
+        public Optional<SameSite> sameSite() {
+            return Optional.ofNullable(sameSite);
+        }
+
+        /**
+         * The cookie SameSite attribute
+         */
+        public enum SameSite {
+            STRICT("Strict"), LAX("Lax");
+
+            private final String value;
+
+            SameSite(String value) {
+                this.value = value;
+            }
+
+            public String value() {
+                return this.value;
+            }
+
+            public play.api.mvc.Cookie.SameSite asScala() {
+                return play.api.mvc.Cookie.SameSite$.MODULE$.parse(value).get();
+            }
+
+            public static Optional<SameSite> parse(String sameSite) {
+                for (SameSite value : values()) {
+                    if (value.value.equalsIgnoreCase(sameSite)) {
+                        return Optional.of(value);
+                    }
+                }
+                return Optional.empty();
+            }
+        }
     }
 
     /*
@@ -2042,6 +2145,7 @@ public class Http {
         private String domain;
         private boolean secure = false;
         private boolean httpOnly = false;
+        private SameSite sameSite;
 
         /**
          * @param name the cookie builder name
@@ -2132,10 +2236,20 @@ public class Http {
         }
 
         /**
+         * @param sameSite specify if the cookie is SameSite
+         * @return the cookie builder with the new SameSite flag
+         * */
+        public CookieBuilder withSameSite(SameSite sameSite) {
+            this.sameSite = sameSite;
+            return this;
+        }
+
+        /**
          * @return a new cookie with the current builder parameters
          * */
         public Cookie build() {
-            return new Cookie(this.name, this.value, this.maxAge, this.path, this.domain, this.secure, this.httpOnly);
+            return new Cookie(
+                this.name, this.value, this.maxAge, this.path, this.domain, this.secure, this.httpOnly, this.sameSite);
         }
     }
 
@@ -2270,6 +2384,7 @@ public class Http {
         int UNSUPPORTED_MEDIA_TYPE = 415;
         int REQUESTED_RANGE_NOT_SATISFIABLE = 416;
         int EXPECTATION_FAILED = 417;
+        int IM_A_TEAPOT = 418;
         int UNPROCESSABLE_ENTITY = 422;
         int LOCKED = 423;
         int FAILED_DEPENDENCY = 424;
@@ -2337,5 +2452,18 @@ public class Http {
          * Content-Type of binary data.
          */
         String BINARY = "application/octet-stream";
+    }
+
+    /**
+     * Standard HTTP Verbs
+     */
+    public static interface HttpVerbs {
+        String GET = "GET";
+        String POST = "POST";
+        String PUT = "PUT";
+        String PATCH = "PATCH";
+        String DELETE = "DELETE";
+        String HEAD = "HEAD";
+        String OPTIONS = "OPTIONS";
     }
 }

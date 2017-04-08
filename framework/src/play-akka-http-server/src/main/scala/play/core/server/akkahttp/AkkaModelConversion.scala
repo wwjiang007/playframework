@@ -19,6 +19,7 @@ import play.api.mvc.request.{ RemoteConnection, RequestTarget }
 import play.core.server.common.{ ForwardedHeaderHandler, ServerResultUtils }
 
 import scala.collection.immutable
+import scala.collection.mutable.ListBuffer
 import scala.concurrent.Future
 
 /**
@@ -34,15 +35,43 @@ private[server] class AkkaModelConversion(
    * Convert an Akka `HttpRequest` to a `RequestHeader` and an `Enumerator`
    * for its body.
    */
-  def convertRequest(
-    requestId: Long,
-    remoteAddress: InetSocketAddress,
-    secureProtocol: Boolean,
-    request: HttpRequest)(implicit fm: Materializer): (RequestHeader, Option[Source[ByteString, Any]]) = {
+  def convertRequest(requestId: Long, remoteAddress: InetSocketAddress, secureProtocol: Boolean, request: HttpRequest)(implicit fm: Materializer): (RequestHeader, Option[Source[ByteString, Any]]) = {
+
     (
       convertRequestHeader(requestId, remoteAddress, secureProtocol, request),
       convertRequestBody(request)
     )
+
+    //    // FIXME this is if you want to try out avoiding conversion 
+    //    (
+    //      new RequestHeaderImpl(
+    //        forwardedHeaderHandler.forwardedConnection(
+    //          new RemoteConnection {
+    //            override def remoteAddress: InetAddress = InetAddress.getLocalHost
+    //            override def secure: Boolean = secureProtocol
+    //            // TODO - Akka does not yet expose the SSLEngine used for the request
+    //            override lazy val clientCertificateChain = None
+    //          },
+    //          Headers()),
+    //        request.method.name,
+    //        new RequestTarget {
+    //          override lazy val uri: URI = new URI(uriString)
+    //          override lazy val uriString: String = request.header[`Raw-Request-URI`] match {
+    //            case None =>
+    //              logger.warn("Can't get raw request URI.")
+    //              request.uri.toString
+    //            case Some(rawUri) =>
+    //              rawUri.uri
+    //          }
+    //          override lazy val path: String = request.uri.path.toString
+    //          override lazy val queryMap: Map[String, Seq[String]] = request.uri.query().toMultiMap
+    //        },
+    //        request.protocol.value,
+    //        Headers(),
+    //        TypedMap.empty
+    //      ),
+    //      None
+    //    )
   }
 
   /**
@@ -54,7 +83,7 @@ private[server] class AkkaModelConversion(
     secureProtocol: Boolean,
     request: HttpRequest): RequestHeader = {
 
-    val headers = convertRequestHeaders(request)
+    val (headers, _uriString) = convertRequestHeaders(request)
     val remoteAddressArg = remoteAddress // Avoid clash between method arg and RequestHeader field
 
     new RequestHeaderImpl(
@@ -69,13 +98,7 @@ private[server] class AkkaModelConversion(
       request.method.name,
       new RequestTarget {
         override lazy val uri: URI = new URI(uriString)
-        override lazy val uriString: String = request.header[`Raw-Request-URI`] match {
-          case None =>
-            logger.warn("Can't get raw request URI.")
-            request.uri.toString
-          case Some(rawUri) =>
-            rawUri.uri
-        }
+        override lazy val uriString: String = _uriString
         override lazy val path: String = request.uri.path.toString
         override lazy val queryMap: Map[String, Seq[String]] = request.uri.query().toMultiMap
       },
@@ -88,19 +111,37 @@ private[server] class AkkaModelConversion(
   /**
    * Convert the request headers of an Akka `HttpRequest` to a Play `Headers` object.
    */
-  private def convertRequestHeaders(request: HttpRequest): Headers = {
-    val entityHeaders: Seq[(String, String)] = request.entity match {
+  private def convertRequestHeaders(request: HttpRequest): (Headers, String) = {
+    var requestUri: String = null
+    val headerBuffer = new ListBuffer[(String, String)]()
+    headerBuffer += CONTENT_TYPE -> request.entity.contentType.value
+
+    request.entity match {
       case HttpEntity.Strict(contentType, data) =>
-        Seq(CONTENT_TYPE -> contentType.value, CONTENT_LENGTH -> data.length.toString)
+        if (request.method.requestEntityAcceptance == RequestEntityAcceptance.Expected || data.nonEmpty)
+          headerBuffer += CONTENT_LENGTH -> data.length.toString
+
       case HttpEntity.Default(contentType, contentLength, _) =>
-        Seq(CONTENT_TYPE -> contentType.value, CONTENT_LENGTH -> contentLength.toString)
-      case HttpEntity.Chunked(contentType, _) =>
-        Seq(CONTENT_TYPE -> contentType.value, TRANSFER_ENCODING -> play.api.http.HttpProtocol.CHUNKED)
+        if (request.method.requestEntityAcceptance == RequestEntityAcceptance.Expected || contentLength > 0)
+          headerBuffer += CONTENT_LENGTH -> contentLength.toString
+
+      case _: HttpEntity.Chunked =>
+        headerBuffer += TRANSFER_ENCODING -> play.api.http.HttpProtocol.CHUNKED
     }
-    val normalHeaders: Seq[(String, String)] = request.headers
-      .filter(_.isNot(`Raw-Request-URI`.lowercaseName))
-      .map(rh => rh.name -> rh.value)
-    new Headers(entityHeaders ++ normalHeaders)
+    request.headers
+      .foreach {
+        case `Raw-Request-URI`(uri) => requestUri = uri
+        case header => headerBuffer += header.name -> header.value
+      }
+
+    val uri =
+      if (requestUri == null) {
+        logger.warn("Can't get raw request URI. Raw-Request-URI was missing.")
+        request.uri.toString
+      } else
+        requestUri
+
+    (new Headers(headerBuffer.result()), uri)
   }
 
   /**
@@ -111,13 +152,17 @@ private[server] class AkkaModelConversion(
     request.entity match {
       case HttpEntity.Strict(_, data) if data.isEmpty =>
         None
+
       case HttpEntity.Strict(_, data) =>
         Some(Source.single(data))
+
       case HttpEntity.Default(_, 0, _) =>
         None
+
       case HttpEntity.Default(contentType, contentLength, pubr) =>
         // FIXME: should do something with the content-length?
         Some(pubr)
+
       case HttpEntity.Chunked(contentType, chunks) =>
         // FIXME: do something with trailing headers?
         Some(chunks.takeWhile(!_.isLastChunk).map(_.data()))

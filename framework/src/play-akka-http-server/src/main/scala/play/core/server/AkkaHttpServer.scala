@@ -26,7 +26,6 @@ import play.api.libs.streams.Accumulator
 import play.api.mvc._
 import play.api.routing.Router
 import play.core.{ ApplicationProvider, DefaultWebCommands, SourceMapper, WebCommands }
-import play.core.server._
 import play.core.server.akkahttp.{ AkkaModelConversion, HttpRequestDecoder }
 import play.core.server.common.{ ForwardedHeaderHandler, ServerResultUtils }
 import play.core.server.ssl.ServerSSLEngine
@@ -56,8 +55,7 @@ class AkkaHttpServer(
 
   def mode = config.mode
 
-  // Remember that some user config may not be available in development mode due to
-  // its unusual ClassLoader.
+  // Remember that some user config may not be available in development mode due to its unusual ClassLoader.
   implicit val system = actorSystem
   implicit val mat = materializer
 

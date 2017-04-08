@@ -32,7 +32,7 @@ trait EssentialAction extends (RequestHeader => Accumulator[ByteString, Result])
   def asJava: play.mvc.EssentialAction = new play.mvc.EssentialAction() {
     def apply(rh: play.mvc.Http.RequestHeader) = {
       import play.core.Execution.Implicits.trampoline
-      self(rh._underlyingHeader).map(_.asJava).asJava
+      self(rh.asScala).map(_.asJava).asJava
     }
     override def apply(rh: RequestHeader) = self(rh)
   }
@@ -133,7 +133,7 @@ trait BodyParser[+A] extends (RequestHeader => Accumulator[ByteString, Either[Re
    * @param ec The context to execute the supplied function with.
    *        The context is prepared on the calling thread.
    * @return the transformed body parser
-   * @see [[play.api.libs.streams.Accumulator.map]]
+   * @see play.api.libs.streams.Accumulator.map
    */
   def map[B](f: A => B)(implicit ec: ExecutionContext): BodyParser[B] = {
     // prepare execution context as body parser object may cross thread boundary
@@ -153,7 +153,7 @@ trait BodyParser[+A] extends (RequestHeader => Accumulator[ByteString, Either[Re
    *        The context prepared on the calling thread.
    * @return the transformed body parser
    * @see [[map]]
-   * @see [[play.api.libs.streams.Accumulator.mapFuture]]
+   * @see play.api.libs.streams.Accumulator.mapFuture[B]
    */
   def mapM[B](f: A => Future[B])(implicit ec: ExecutionContext): BodyParser[B] = {
     // prepare execution context as body parser object may cross thread boundary

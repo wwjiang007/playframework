@@ -1,3 +1,6 @@
+/*
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
+ */
 package play.api.libs.ws.ahc
 
 import javax.cache.Cache
@@ -27,7 +30,7 @@ class AhcWSClient(underlyingClient: StandaloneAhcWSClient) extends WSClient {
    *
    * @param url The base URL to make HTTP requests to.
    * @return a request
-   * @throws IllegalArgumentException if the URL is invalid.
+   * @throws java.lang.IllegalArgumentException if the URL is invalid.
    */
   @throws[IllegalArgumentException]
   override def url(url: String): WSRequest = {

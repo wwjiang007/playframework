@@ -1,11 +1,10 @@
 /*
  * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
-
 import BuildSettings._
 import Dependencies._
 import Generators._
-import com.typesafe.tools.mima.plugin.MimaKeys.{mimaPreviousArtifacts, mimaReportBinaryIssues}
+import com.typesafe.tools.mima.plugin.MimaKeys.{ mimaPreviousArtifacts, mimaReportBinaryIssues }
 import interplay.PlayBuildBase.autoImport._
 import sbt.Keys.parallelExecution
 import sbt.ScriptedPlugin._
@@ -14,15 +13,11 @@ import sbt._
 lazy val BuildLinkProject = PlayNonCrossBuiltProject("Build-Link", "build-link")
     .dependsOn(PlayExceptionsProject)
 
-lazy val RunSupportProject = PlayDevelopmentProject("Run-Support", "run-support")
-    .settings(libraryDependencies ++= runSupportDependencies(sbtVersion.value, scalaVersion.value))
-    .dependsOn(BuildLinkProject)
-
-// extra run-support project that is only compiled against sbt scala version
-lazy val SbtRunSupportProject = PlaySbtProject("SBT-Run-Support", "run-support")
+// run-support project is only compiled against sbt scala version
+lazy val RunSupportProject = PlaySbtProject("Run-Support", "run-support")
     .settings(
-      target := target.value / "sbt-run-support",
-      libraryDependencies ++= runSupportDependencies(sbtVersion.value, scalaVersion.value)
+      target := target.value / "run-support",
+      libraryDependencies ++= runSupportDependencies
     ).dependsOn(BuildLinkProject)
 
 lazy val RoutesCompilerProject = PlayDevelopmentProject("Routes-Compiler", "routes-compiler")
@@ -91,14 +86,15 @@ lazy val PlayServerProject = PlayCrossBuiltProject("Play-Server", "play-server")
 lazy val PlayNettyServerProject = PlayCrossBuiltProject("Play-Netty-Server", "play-netty-server")
     .settings(libraryDependencies ++= netty)
     .dependsOn(PlayServerProject)
-    
+
+import AkkaDependency._
 lazy val PlayAkkaHttpServerProject = PlayCrossBuiltProject("Play-Akka-Http-Server", "play-akka-http-server")
-    .settings(libraryDependencies ++= akkaHttp)
     // Include scripted tests here as well as in the SBT Plugin, because we
     // don't want the SBT Plugin to have a dependency on an experimental module.
     //.settings(ScriptedPlugin.scriptedSettings ++ playScriptedSettings)
     .dependsOn(PlayServerProject, StreamsProject)
     .dependsOn(PlayGuiceProject % "test")
+    .addAkkaModuleDependency("akka-http-core")
 
 lazy val PlayJdbcApiProject = PlayCrossBuiltProject("Play-JDBC-Api", "play-jdbc-api")
     .dependsOn(PlayProject)
@@ -150,8 +146,10 @@ lazy val PlayJavaProject = PlayCrossBuiltProject("Play-Java", "play-java")
     )
 
 lazy val PlayJavaFormsProject = PlayCrossBuiltProject("Play-Java-Forms", "play-java-forms")
-    .settings(libraryDependencies ++= javaDeps ++ javaFormsDeps ++ javaTestDeps)
-    .dependsOn(
+    .settings(
+      libraryDependencies ++= javaDeps ++ javaFormsDeps ++ javaTestDeps,
+      compileOrder in Test := CompileOrder.JavaThenScala // work around SI-9853 - can be removed when dropping Scala 2.11 support
+    ).dependsOn(
       PlayJavaProject % "compile;test->test"
     )
 
@@ -179,7 +177,7 @@ lazy val SbtPluginProject = PlaySbtPluginProject("SBT-Plugin", "sbt-plugin")
         val () = publishLocal.value
         val () = (publishLocal in RoutesCompilerProject).value
       }
-    ).dependsOn(SbtRoutesCompilerProject, SbtRunSupportProject)
+    ).dependsOn(SbtRoutesCompilerProject, RunSupportProject)
 
 lazy val PlayLogback = PlayCrossBuiltProject("Play-Logback", "play-logback")
     .settings(
@@ -291,7 +289,6 @@ lazy val publishedProjects = Seq[ProjectReference](
   PlayWsProject,
   PlayAhcWsProject,
   PlayOpenIdProject,
-  SbtRunSupportProject,
   RunSupportProject,
   SbtPluginProject,
   PlaySpecs2Project,

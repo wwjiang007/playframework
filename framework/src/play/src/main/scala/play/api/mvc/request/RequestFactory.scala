@@ -1,3 +1,6 @@
+/*
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
+ */
 package play.api.mvc.request
 
 import javax.inject.Inject
@@ -90,8 +93,8 @@ class DefaultRequestFactory @Inject() (
 
   def this(config: HttpConfiguration) = this(
     new DefaultCookieHeaderEncoding(config.cookies),
-    new DefaultSessionCookieBaker(config.session, new CookieSignerProvider(SecretConfiguration()).get),
-    new DefaultFlashCookieBaker(config.flash, config.session, new CookieSignerProvider(SecretConfiguration()).get)
+    new DefaultSessionCookieBaker(config.session, config.secret, new CookieSignerProvider(config.secret).get),
+    new DefaultFlashCookieBaker(config.flash, config.secret, new CookieSignerProvider(config.secret).get)
   )
 
   override def createRequestHeader(

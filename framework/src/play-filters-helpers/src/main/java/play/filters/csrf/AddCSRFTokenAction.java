@@ -43,7 +43,7 @@ public class AddCSRFTokenAction extends Action<AddCSRFToken> {
         CSRFActionHelper csrfActionHelper = new CSRFActionHelper(sessionConfiguration, config, tokenSigner);
 
         play.api.mvc.Request<RequestBody> request =
-                csrfActionHelper.tagRequestFromHeader(ctx.request()._underlyingRequest());
+                csrfActionHelper.tagRequestFromHeader(ctx.request().asScala());
 
         if (csrfActionHelper.getTokenToValidate(request).isEmpty()) {
             // No token in header and we have to create one if not found, so create a new token
@@ -60,7 +60,7 @@ public class AddCSRFTokenAction extends Action<AddCSRFToken> {
             if (config.cookieName().isDefined()) {
                 scala.Option<String> domain = Session.domain();
                 Http.Cookie cookie = new Http.Cookie(config.cookieName().get(), newToken, null, Session.path(),
-                        domain.isDefined() ? domain.get() : null, config.secureCookie(), config.httpOnlyCookie());
+                        domain.isDefined() ? domain.get() : null, config.secureCookie(), config.httpOnlyCookie(), null);
                 ctx.response().setCookie(cookie);
             } else {
                 ctx.session().put(config.tokenName(), newToken);

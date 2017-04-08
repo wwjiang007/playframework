@@ -1,11 +1,12 @@
+/*
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
+ */
 package play.libs;
 
-import scala.collection.JavaConverters;
 import scala.util.Try;
 
 import javax.inject.Inject;
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Path;
 
 /**

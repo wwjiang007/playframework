@@ -15,7 +15,6 @@ import akka.actor.{ ActorSystem, Cancellable }
 import com.google.common.base.{ FinalizablePhantomReference, FinalizableReferenceQueue }
 import com.google.common.collect.Sets
 import play.api.Configuration
-import play.api.http.HttpConfiguration
 import play.api.inject.ApplicationLifecycle
 
 import scala.concurrent.Future
@@ -59,6 +58,11 @@ object Files {
      * @return the boolean value of the FS delete operation, or an throwable.
      */
     def delete(file: TemporaryFile): Try[Boolean]
+
+    /**
+     * @return the Java version for the temporary file creator.
+     */
+    def asJava: play.libs.Files.TemporaryFileCreator = new play.libs.Files.DelegateTemporaryFileCreator(this)
   }
 
   trait TemporaryFile {

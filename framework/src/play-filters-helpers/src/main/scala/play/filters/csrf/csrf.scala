@@ -10,8 +10,8 @@ import akka.stream.Materializer
 import com.typesafe.config.ConfigMemorySize
 import play.api._
 import play.api.http.{ HttpConfiguration, HttpErrorHandler }
-import play.api.inject.{ Binding, Module }
-import play.api.libs.crypto.CSRFTokenSigner
+import play.api.inject.{ Binding, Module, bind }
+import play.api.libs.crypto.{ CSRFTokenSigner, CSRFTokenSignerProvider }
 import play.api.libs.typedmap.TypedKey
 import play.api.mvc.Results._
 import play.api.mvc._
@@ -196,11 +196,11 @@ object CSRF {
   /**
    * Extract token from current Java request
    *
-   * @param request The request to extract the token from
+   * @param requestHeader The request to extract the token from
    * @return The token, if found.
    */
-  def getToken(request: play.mvc.Http.RequestHeader): Optional[Token] = {
-    Optional.ofNullable(getToken(request._underlyingHeader()).orNull)
+  def getToken(requestHeader: play.mvc.Http.RequestHeader): Optional[Token] = {
+    Optional.ofNullable(getToken(requestHeader.asScala()).orNull)
   }
 
   /**
@@ -265,8 +265,8 @@ object CSRF {
   class JavaCSRFErrorHandlerDelegate @Inject() (delegate: ErrorHandler) extends CSRFErrorHandler {
     import play.core.Execution.Implicits.trampoline
 
-    def handle(req: Http.RequestHeader, msg: String) =
-      FutureConverters.toJava(delegate.handle(req._underlyingHeader(), msg).map(_.asJava))
+    def handle(requestHeader: Http.RequestHeader, msg: String) =
+      FutureConverters.toJava(delegate.handle(requestHeader.asScala(), msg).map(_.asJava))
   }
 
   object ErrorHandler {
@@ -282,13 +282,13 @@ object CSRF {
  * The CSRF module.
  */
 class CSRFModule extends Module {
-  def bindings(environment: Environment, configuration: Configuration) = {
-    Seq(
-      bind[CSRFConfig].toProvider[CSRFConfigProvider],
-      bind[CSRF.TokenProvider].toProvider[CSRF.TokenProviderProvider],
-      bind[CSRFFilter].toSelf
-    ) ++ ErrorHandler.bindingsFromConfiguration(environment, configuration)
-  }
+  def bindings(environment: Environment, configuration: Configuration) = Seq(
+    bind[play.libs.crypto.CSRFTokenSigner].to(classOf[play.libs.crypto.DefaultCSRFTokenSigner]),
+    bind[CSRFTokenSigner].toProvider[CSRFTokenSignerProvider],
+    bind[CSRFConfig].toProvider[CSRFConfigProvider],
+    bind[CSRF.TokenProvider].toProvider[CSRF.TokenProviderProvider],
+    bind[CSRFFilter].toSelf
+  ) ++ ErrorHandler.bindingsFromConfiguration(environment, configuration)
 }
 
 /**

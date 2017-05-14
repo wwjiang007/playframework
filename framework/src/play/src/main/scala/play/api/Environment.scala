@@ -17,7 +17,7 @@ import java.io.{ InputStream, File }
 case class Environment(
     rootPath: File,
     classLoader: ClassLoader,
-    mode: Mode.Mode) {
+    mode: Mode) {
 
   /**
    * Retrieves a file relative to the application root path.
@@ -92,7 +92,6 @@ case class Environment(
 
   /**
    * @return Returns the Java version for this environment.
-   * @see [[play.Environment]]
    */
   def asJava: play.Environment = new play.Environment(this)
 
@@ -105,5 +104,5 @@ object Environment {
    * Uses the same classloader that the environment classloader is defined in, and the current working directory as the
    * path.
    */
-  def simple(path: File = new File("."), mode: Mode.Mode = Mode.Test) = Environment(path, Environment.getClass.getClassLoader, mode)
+  def simple(path: File = new File("."), mode: Mode = Mode.Test) = Environment(path, Environment.getClass.getClassLoader, mode)
 }

@@ -15,6 +15,7 @@ import akka.http.scaladsl.model.headers.Expect
 import akka.http.scaladsl.model.ws.UpgradeToWebSocket
 import akka.http.scaladsl.settings.ServerSettings
 import akka.http.scaladsl.{ ConnectionContext, Http }
+import akka.http.scaladsl.util.FastFuture._
 import akka.stream.Materializer
 import akka.stream.scaladsl._
 import akka.util.ByteString
@@ -77,22 +78,19 @@ class AkkaHttpServer(
     }
       // Play needs Raw Request Uri's to match Netty
       .withRawRequestUriHeader(true)
+      .withRemoteAddressHeader(true)
       .withTransparentHeadRequests(akkaConfig.get[Boolean]("transparent-head-requests"))
       .withServerHeader(akkaConfig.getOptional[String]("server-header").filterNot(_ == "").map(headers.Server(_)))
       .withDefaultHostHeader(headers.Host(akkaConfig.get[String]("default-host-header")))
-      .withRemoteAddressHeader(akkaConfig.get[Boolean]("remote-address-header"))
 
     // TODO: pass in Inet.SocketOption and LoggerAdapter params?
-    val serverSource: Source[Http.IncomingConnection, Future[Http.ServerBinding]] =
-      Http().bind(interface = config.address, port = port, connectionContext = connectionContext, settings = serverSettings)
-
-    val connectionSink: Sink[Http.IncomingConnection, _] = Sink.foreach { connection: Http.IncomingConnection =>
-      connection.handleWith(Flow[HttpRequest]
-        .map(HttpRequestDecoder.decodeRequest)
-        .mapAsync(parallelism = 1)(handleRequest(connection.remoteAddress, _, connectionContext.isSecure)))
-    }
-
-    val bindingFuture: Future[Http.ServerBinding] = serverSource.to(connectionSink).run()
+    val bindingFuture: Future[Http.ServerBinding] =
+      Http()
+        .bindAndHandleAsync(
+          handler = handleRequest(_, connectionContext.isSecure),
+          interface = config.address, port = port,
+          connectionContext = connectionContext,
+          settings = serverSettings)
 
     val bindTimeout = akkaConfig.get[FiniteDuration]("bindTimeout")
     Await.result(bindingFuture, bindTimeout)
@@ -139,23 +137,32 @@ class AkkaHttpServer(
     new AkkaModelConversion(resultUtils, forwardedHeaderHandler)
   }
 
-  private def handleRequest(remoteAddress: InetSocketAddress, request: HttpRequest, secure: Boolean): Future[HttpResponse] = {
+  private def handleRequest(request: HttpRequest, secure: Boolean): Future[HttpResponse] = {
+    val remoteAddress: InetSocketAddress = remoteAddressOfRequest(request)
+    val decodedRequest = HttpRequestDecoder.decodeRequest(request)
     val requestId = requestIDs.incrementAndGet()
     val (convertedRequestHeader, requestBodySource) = modelConversion.convertRequest(
       requestId = requestId,
       remoteAddress = remoteAddress,
       secureProtocol = secure,
-      request = request)
+      request = decodedRequest)
     val (taggedRequestHeader, handler, newTryApp) = getHandler(convertedRequestHeader)
     val responseFuture = executeHandler(
       newTryApp,
-      request,
+      decodedRequest,
       taggedRequestHeader,
       requestBodySource,
       handler
     )
     responseFuture
   }
+
+  def remoteAddressOfRequest(req: HttpRequest): InetSocketAddress =
+    req.header[headers.`Remote-Address`] match {
+      case Some(headers.`Remote-Address`(RemoteAddress.IP(ip, Some(port)))) =>
+        new InetSocketAddress(ip, port)
+      case _ => throw new IllegalStateException("`Remote-Address` header was missing")
+    }
 
   private def getHandler(requestHeader: RequestHeader): (RequestHeader, Handler, Try[Application]) = {
     getHandlerFor(requestHeader) match {
@@ -178,12 +185,12 @@ class AkkaHttpServer(
     tryApp: Try[Application],
     request: HttpRequest,
     taggedRequestHeader: RequestHeader,
-    requestBodySource: Option[Source[ByteString, _]],
+    requestBodySource: Either[ByteString, Source[ByteString, _]],
     handler: Handler): Future[HttpResponse] = {
 
     val upgradeToWebSocket = request.header[UpgradeToWebSocket]
 
-    // Get the app's HttpErroHandler or fallback to a default value
+    // Get the app's HttpErrorHandler or fallback to a default value
     val errorHandler: HttpErrorHandler = tryApp match {
       case Success(app) => app.errorHandler
       case Failure(_) => DefaultHttpErrorHandler
@@ -221,7 +228,7 @@ class AkkaHttpServer(
   def executeAction(
     request: HttpRequest,
     taggedRequestHeader: RequestHeader,
-    requestBodySource: Option[Source[ByteString, _]],
+    requestBodySource: Either[ByteString, Source[ByteString, _]],
     action: EssentialAction,
     errorHandler: HttpErrorHandler): Future[HttpResponse] = {
 
@@ -233,16 +240,17 @@ class AkkaHttpServer(
       // requests demand.  This is due to a semantic mismatch between Play and Akka-HTTP, Play signals to continue
       // by requesting demand, Akka-HTTP signals to continue by attaching a sink to the source. See
       // https://github.com/akka/akka/issues/17782 for more details.
-      requestBodySource.map(source => Source.lazily(() => source)).orElse(Some(Source.empty))
+      requestBodySource.right.map(source => Source.lazily(() => source))
     } else {
       requestBodySource
     }
 
     val resultFuture: Future[Result] = source match {
-      case None => actionAccumulator.run()
-      case Some(s) => actionAccumulator.run(s)
+      case Left(bytes) if bytes.isEmpty => actionAccumulator.run()
+      case Left(bytes) => actionAccumulator.run(bytes)
+      case Right(s) => actionAccumulator.run(s)
     }
-    val responseFuture: Future[HttpResponse] = resultFuture.flatMap { result =>
+    val responseFuture: Future[HttpResponse] = resultFuture.fast.flatMap { result =>
       val cleanedResult: Result = resultUtils.prepareCookies(taggedRequestHeader, result)
       modelConversion.convertResult(taggedRequestHeader, cleanedResult, request.protocol, errorHandler)
     }

@@ -41,15 +41,12 @@ object PlayRun {
    */
   val DocsApplication = config("docs").hide
 
-  val createURLClassLoader: ClassLoaderCreator = Reloader.createURLClassLoader
-  val createDelegatedResourcesClassLoader: ClassLoaderCreator = Reloader.createDelegatedResourcesClassLoader
-
   val twirlSourceHandler = new TwirlSourceMapping()
 
   val generatedSourceHandlers = SbtTwirl.defaultFormats.map{ case (k, v) => ("scala." + k, twirlSourceHandler) }
 
-  val playDefaultRunTask = playRunTask(playRunHooks, playDependencyClasspath, playDependencyClassLoader,
-    playReloaderClasspath, playReloaderClassLoader, playAssetsClassLoader)
+  val playDefaultRunTask = playRunTask(playRunHooks, playDependencyClasspath,
+    playReloaderClasspath, playAssetsClassLoader)
 
   /**
    * This method is public API, used by sbt-echo, which is used by Activator:
@@ -61,8 +58,8 @@ object PlayRun {
    */
   def playRunTask(
     runHooks: TaskKey[Seq[play.sbt.PlayRunHook]],
-    dependencyClasspath: TaskKey[Classpath], dependencyClassLoader: TaskKey[ClassLoaderCreator],
-    reloaderClasspath: TaskKey[Classpath], reloaderClassLoader: TaskKey[ClassLoaderCreator],
+    dependencyClasspath: TaskKey[Classpath],
+    reloaderClasspath: TaskKey[Classpath],
     assetsClassLoader: TaskKey[ClassLoader => ClassLoader]): Def.Initialize[InputTask[Unit]] = Def.inputTask {
 
     val args = Def.spaceDelimited().parsed
@@ -80,12 +77,10 @@ object PlayRun {
     lazy val devModeServer = Reloader.startDevMode(
       runHooks.value,
       (javaOptions in Runtime).value,
-      dependencyClasspath.value.files,
-      dependencyClassLoader.value,
-      reloadCompile,
-      reloaderClassLoader.value,
-      assetsClassLoader.value,
       playCommonClassloader.value,
+      dependencyClasspath.value.files,
+      reloadCompile,
+      assetsClassLoader.value,
       playMonitoredFiles.value,
       fileWatchService.value,
       generatedSourceHandlers,
@@ -94,7 +89,8 @@ object PlayRun {
       baseDirectory.value,
       devSettings.value,
       args,
-      (mainClass in (Compile, Keys.run)).value.get
+      (mainClass in (Compile, Keys.run)).value.get,
+      PlayRun
     )
 
     interaction match {

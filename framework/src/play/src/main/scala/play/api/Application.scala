@@ -57,7 +57,7 @@ trait Application {
   /**
    * `Dev`, `Prod` or `Test`
    */
-  def mode: Mode.Mode = environment.mode
+  def mode: Mode = environment.mode
 
   /**
    * The application's environment
@@ -99,8 +99,6 @@ trait Application {
 
   /**
    * Return the application as a Java application.
-   *
-   * @see [[play.Application]]
    */
   def asJava: play.Application = {
     new play.DefaultApplication(this, configuration.underlying, injector.asJava)

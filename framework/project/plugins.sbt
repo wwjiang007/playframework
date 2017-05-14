@@ -1,11 +1,9 @@
 // Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
 
-buildInfoSettings
-
-sourceGenerators in Compile += Def.task(buildInfo.value).taskValue
+enablePlugins(BuildInfoPlugin)
 
 val Versions = new {
-  val sbtNativePackager = "1.1.5"
+  val sbtNativePackager = "1.1.6"
   val mima = "0.1.12"
   val sbtScalariform = "1.6.0"
   val sbtJmh = "0.2.20"

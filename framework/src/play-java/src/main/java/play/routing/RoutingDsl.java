@@ -4,6 +4,7 @@
 package play.routing;
 
 import net.jodah.typetools.TypeResolver;
+import play.BuiltInComponents;
 import play.Logger;
 import play.api.Application;
 import play.api.mvc.AnyContent;
@@ -89,7 +90,7 @@ import java.util.stream.StreamSupport;
  */
 public class RoutingDsl {
 
-    private final Logger.ALogger logger = Logger.of(RoutingDsl.class);
+    private static final Logger.ALogger logger = Logger.of(RoutingDsl.class);
 
     private final BodyParser<AnyContent> bodyParser;
     private final JavaContextComponents contextComponents;
@@ -123,6 +124,10 @@ public class RoutingDsl {
     public RoutingDsl(PlayBodyParsers bodyParsers, JavaContextComponents contextComponents) {
         this.bodyParser = bodyParsers.defaultBodyParser();
         this.contextComponents = contextComponents;
+    }
+
+    public static RoutingDsl fromComponents(BuiltInComponents components) {
+        return new RoutingDsl(components.defaultScalaBodyParser(), components.javaContextComponents());
     }
 
     private Application app() {

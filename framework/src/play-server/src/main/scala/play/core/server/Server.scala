@@ -15,7 +15,11 @@ import play.api._
 import play.api.mvc._
 import play.core.{ ApplicationProvider, DefaultWebCommands }
 import play.api.inject.DefaultApplicationLifecycle
-import play.core.j.JavaContextComponents
+
+import play.routing.{ Router => JRouter }
+import play.{ ApplicationLoader => JApplicationLoader }
+import play.{ BuiltInComponents => JBuiltInComponents }
+import play.{ BuiltInComponentsFromContext => JBuiltInComponentsFromContext }
 
 import scala.util.{ Failure, Success }
 import scala.concurrent.Future
@@ -28,9 +32,9 @@ trait WebSocketable {
 /**
  * Provides generic server behaviour for Play applications.
  */
-trait Server extends ServerWithStop {
+trait Server extends ReloadableServer {
 
-  def mode: Mode.Mode
+  def mode: Mode
 
   /**
    * Try to get the handler for a request and return it as a `Right`. If we
@@ -82,7 +86,9 @@ trait Server extends ServerWithStop {
 
   def applicationProvider: ApplicationProvider
 
-  def stop() {
+  def reload(): Unit = applicationProvider.get
+
+  def stop(): Unit = {
     applicationProvider.current.foreach { app =>
       LoggerConfigurator(app.classloader).foreach(_.shutdown())
     }
@@ -223,21 +229,18 @@ object Server {
 }
 
 private[play] object JavaServerHelper {
-  def forRouter(router: Router, mode: Mode.Mode, httpPort: Option[Integer], sslPort: Option[Integer]): Server = {
-    forRouter(mode, httpPort, sslPort)(new JFunction[BuiltInComponents, Router] {
-      override def apply(components: BuiltInComponents): Router = router
+  def forRouter(router: JRouter, mode: Mode, httpPort: Option[Integer], sslPort: Option[Integer]): Server = {
+    forRouter(mode, httpPort, sslPort)(new JFunction[JBuiltInComponents, JRouter] {
+      override def apply(components: JBuiltInComponents): JRouter = router
     })
   }
 
-  def forRouter(mode: Mode.Mode, httpPort: Option[Integer], sslPort: Option[Integer])(block: JFunction[BuiltInComponents, Router]): Server = {
-    val context = ApplicationLoader.Context(
-      Environment.simple(mode = mode),
-      None, new DefaultWebCommands(), Configuration(ConfigFactory.load()),
-      new DefaultApplicationLifecycle
-    )
-    val application = new BuiltInComponentsFromContext(context) with NoHttpFiltersComponents {
-      override def router: Router = block.apply(this)
-    }.application
+  def forRouter(mode: Mode, httpPort: Option[Integer], sslPort: Option[Integer])(block: JFunction[JBuiltInComponents, JRouter]): Server = {
+    val context = JApplicationLoader.create(Environment.simple(mode = mode).asJava)
+    val application = new JBuiltInComponentsFromContext(context) {
+      override def router: JRouter = block.apply(this)
+      override def httpFilters(): Array[play.mvc.EssentialFilter] = Array.empty[play.mvc.EssentialFilter]
+    }.application.asScala()
     Play.start(application)
     val serverConfig = ServerConfig(mode = mode, port = httpPort.map(_.intValue), sslPort = sslPort.map(_.intValue))
     implicitly[ServerProvider].createServer(serverConfig, application)

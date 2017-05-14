@@ -8,9 +8,9 @@ import buildinfo.BuildInfo
 
 object Dependencies {
 
-  val akkaVersion = "2.5.0-RC2"
-  val akkaHttpVersion = "10.0.5"
-  val playJsonVersion = "2.6.0-M6"
+  val akkaVersion = "2.5.1"
+  val akkaHttpVersion = "10.0.6"
+  val playJsonVersion = "2.6.0-M7"
 
   val logback = "ch.qos.logback" % "logback-classic" % "1.2.3"
 
@@ -38,10 +38,10 @@ object Dependencies {
   val slf4j = Seq("slf4j-api", "jul-to-slf4j", "jcl-over-slf4j").map("org.slf4j" % _ % "1.7.25")
 
   val guava = "com.google.guava" % "guava" % "21.0"
-  val findBugs = "com.google.code.findbugs" % "jsr305" % "3.0.1" // Needed by guava
+  val findBugs = "com.google.code.findbugs" % "jsr305" % "3.0.2" // Needed by guava
   val mockitoAll = "org.mockito" % "mockito-all" % "1.10.19"
 
-  val h2database = "com.h2database" % "h2" % "1.4.194"
+  val h2database = "com.h2database" % "h2" % "1.4.195"
   val derbyDatabase = "org.apache.derby" % "derby" % "10.13.1.1"
 
   val acolyteVersion = "1.0.43-j7p"
@@ -59,7 +59,7 @@ object Dependencies {
 
   val jpaDeps = Seq(
     "org.hibernate.javax.persistence" % "hibernate-jpa-2.1-api" % "1.0.0.Final",
-    "org.hibernate" % "hibernate-entitymanager" % "5.2.9.Final" % "test"
+    "org.hibernate" % "hibernate-entitymanager" % "5.2.10.Final" % "test"
   )
 
   val scalaJava8Compat = "org.scala-lang.modules" %% "scala-java8-compat" % "0.8.0"
@@ -68,7 +68,7 @@ object Dependencies {
     case _ => Nil
   }
 
-  val springFrameworkVersion = "4.3.7.RELEASE"
+  val springFrameworkVersion = "4.3.8.RELEASE"
 
   val javaDeps = Seq(
     scalaJava8Compat,
@@ -142,7 +142,7 @@ object Dependencies {
     specsBuild.map(_ % Test) ++
     javaTestDeps
 
-  val nettyVersion = "4.1.8.Final"
+  val nettyVersion = "4.1.10.Final"
 
   val netty = Seq(
     "com.typesafe.netty" % "netty-reactive-streams-http" % "2.0.0-M1",
@@ -169,7 +169,7 @@ object Dependencies {
 
   // use partial version so that non-standard scala binary versions from dbuild also work
   def sbtIO(sbtVersion: String, scalaVersion: String): ModuleID = CrossVersion.partialVersion(scalaVersion) match {
-    case Some((2, major)) if major >= 11 => "org.scala-sbt" %% "io" % "0.13.13" % "provided"
+    case Some((2, major)) if major >= 11 => "org.scala-sbt" %% "io" % "0.13.15" % "provided"
     case _ => "org.scala-sbt" % "io" % sbtVersion % "provided"
   }
 
@@ -190,8 +190,8 @@ object Dependencies {
 
       sbtDep("com.typesafe.sbt" % "sbt-native-packager" % BuildInfo.sbtNativePackagerVersion),
 
-      sbtDep("com.typesafe.sbt" % "sbt-web" % "1.3.0"),
-      sbtDep("com.typesafe.sbt" % "sbt-js-engine" % "1.1.3")
+      sbtDep("com.typesafe.sbt" % "sbt-web" % "1.4.0"),
+      sbtDep("com.typesafe.sbt" % "sbt-js-engine" % "1.1.4")
     ) ++ specsBuild.map(_ % Test)
   }
 
@@ -200,7 +200,7 @@ object Dependencies {
     "org.webjars" % "prettify" % "4-Mar-2013" % "webjars"
   )
 
-  val playDocVersion = "1.8.0"
+  val playDocVersion = "1.8.1"
   val playDocsDependencies = Seq(
     "com.typesafe.play" %% "play-doc" % playDocVersion
   ) ++ playdocWebjarDependencies
@@ -215,28 +215,36 @@ object Dependencies {
 
   val scalacheckDependencies = Seq(
     "org.specs2"     %% "specs2-scalacheck" % specsVersion % Test,
-    "org.scalacheck" %% "scalacheck"        % "1.13.4"     % Test
+    "org.scalacheck" %% "scalacheck"        % "1.13.5"     % Test
   )
 
   val playServerDependencies = Seq(
     guava % Test
   ) ++ specsBuild.map(_ % Test)
 
+  val seleniumVersion = "3.4.0"
   val testDependencies = Seq(junit) ++ specsBuild.map(_ % Test) ++ Seq(
     junitInterface,
     guava,
     findBugs,
-    ("org.fluentlenium" % "fluentlenium-core" % "3.1.1")
-      .exclude("org.jboss.netty", "netty"),
-    "org.seleniumhq.selenium" % "htmlunit-driver" % "2.25",
-    "org.seleniumhq.selenium" % "selenium-firefox-driver" % "3.3.1",
-    "org.seleniumhq.selenium" % "selenium-support" % "3.3.1"
+    "org.fluentlenium" % "fluentlenium-core" % "3.2.0" exclude("org.jboss.netty", "netty"),
+    // htmlunit-driver uses an open range to selenium dependencies. This is slightly
+    // slowing down the build. So the open range deps were removed and we can re-add
+    // them using a specific version. Using an open range is also not good for the
+    // local cache.
+    "org.seleniumhq.selenium" % "htmlunit-driver" % "2.26" excludeAll(
+      ExclusionRule("org.seleniumhq.selenium", "selenium-api"),
+      ExclusionRule("org.seleniumhq.selenium", "selenium-support")
+    ),
+    "org.seleniumhq.selenium" % "selenium-api" % seleniumVersion,
+    "org.seleniumhq.selenium" % "selenium-support" % seleniumVersion,
+    "org.seleniumhq.selenium" % "selenium-firefox-driver" % seleniumVersion
   ) ++ guiceDeps
 
+  val playCacheDeps = specsBuild.map(_ % Test)
+
   val ehcacheVersion = "2.6.11"
-  val playCacheDeps = Seq(
-      "net.sf.ehcache" % "ehcache-core" % ehcacheVersion
-    ) ++ specsBuild.map(_ % Test)
+  val playEhcacheDeps = Seq("net.sf.ehcache" % "ehcache-core" % ehcacheVersion)
 
   val playWsStandaloneVersion = "1.0.0-M6"
   val playWsDeps = Seq(
@@ -259,8 +267,8 @@ object Dependencies {
  * How to use this:
  *    $ sbt -J-XX:+UnlockCommercialFeatures -J-XX:+FlightRecorder -Dakka-http.sources=$HOME/code/akka-http '; project Play-Akka-Http-Server; test:run'
  *
- * Make sure Akka-HTTP has 2.12 as the FIRST version (or that scalaVersion := "2.12.1", otherwise it won't find the artifact
- *    crossScalaVersions := Seq("2.12.1", "2.11.8"),
+ * Make sure Akka-HTTP has 2.12 as the FIRST version (or that scalaVersion := "2.12.2", otherwise it won't find the artifact
+ *    crossScalaVersions := Seq("2.12.2", "2.11.11"),
  */
  object AkkaDependency {
   // Needs to be a URI like git://github.com/akka/akka.git#master or file:///xyz/akka

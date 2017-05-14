@@ -5,6 +5,7 @@ package play.api.mvc
 
 import java.io._
 import java.nio.channels.{ ByteChannel, Channels }
+import java.nio.file.Files
 import java.util.Locale
 import javax.inject.{ Inject, Provider }
 
@@ -223,7 +224,7 @@ case class RawBuffer(memoryThreshold: Int, temporaryFileCreator: TemporaryFileCr
 
   @volatile private var inMemory: ByteString = initialData
   @volatile private var backedByTemporaryFile: TemporaryFile = _
-  @volatile private var outStream: FileOutputStream = _
+  @volatile private var outStream: OutputStream = _
 
   private[play] def push(chunk: ByteString) {
     if (inMemory != null) {
@@ -246,7 +247,7 @@ case class RawBuffer(memoryThreshold: Int, temporaryFileCreator: TemporaryFileCr
 
   private[play] def backToTemporaryFile() {
     backedByTemporaryFile = temporaryFileCreator.create("requestBody", "asRaw")
-    outStream = new FileOutputStream(backedByTemporaryFile)
+    outStream = Files.newOutputStream(backedByTemporaryFile)
     outStream.write(inMemory.toArray)
     inMemory = null
   }
@@ -302,7 +303,7 @@ case class RawBuffer(memoryThreshold: Int, temporaryFileCreator: TemporaryFileCr
  * Legacy body parsers trait. Basically all this does is define a "parse" member with a PlayBodyParsers instance
  * constructed from the running app's settings. If no app is running, we create parsers using default settings and an
  * internally-created materializer. This is done to support legacy behavior. Instead of using this trait, we suggest
- * injecting an instance of PlayBodyParsers (either directly or through AbstractController).
+ * injecting an instance of PlayBodyParsers (either directly or through [[BaseController]] or one of its subclasses).
  */
 trait BodyParsers {
 
@@ -670,7 +671,7 @@ trait PlayBodyParsers extends BodyParserUtils {
    */
   def file(to: File): BodyParser[File] = BodyParser("file, to=" + to) { request =>
     import play.core.Execution.Implicits.trampoline
-    Accumulator(StreamConverters.fromOutputStream(() => new FileOutputStream(to))).map(_ => Right(to))
+    Accumulator(StreamConverters.fromOutputStream(() => Files.newOutputStream(to.toPath))).map(_ => Right(to))
   }
 
   /**
@@ -841,19 +842,32 @@ trait PlayBodyParsers extends BodyParserUtils {
     BodyParser(name + ", maxLength=" + maxLength) { request =>
       import play.core.Execution.Implicits.trampoline
 
-      enforceMaxLength(request, maxLength, Accumulator(
-        Sink.fold[ByteString, ByteString](ByteString.empty)((state, bs) => state ++ bs)
-      ) mapFuture { bytes =>
-          try {
-            Future.successful(Right(parser(request, bytes)))
-          } catch {
-            case NonFatal(e) =>
-              logger.debug(errorMessage, e)
-              createBadResult(errorMessage + ": " + e.getMessage)(request).map(Left(_))
-          }
-        })
-    }
+      def parseBody(bytes: ByteString): Future[Either[Result, A]] = {
+        try {
+          Future.successful(Right(parser(request, bytes)))
+        } catch {
+          case NonFatal(e) =>
+            logger.debug(errorMessage, e)
+            createBadResult(errorMessage + ": " + e.getMessage)(request).map(Left(_))
+        }
+      }
 
+      Accumulator.strict[ByteString, Either[Result, A]](
+        // If the body was strict
+        {
+          case Some(bytes) if bytes.size <= maxLength =>
+            parseBody(bytes)
+          case None =>
+            parseBody(ByteString.empty)
+          case _ =>
+            createBadResult("Request Entity Too Large", REQUEST_ENTITY_TOO_LARGE)(request).map(Left.apply)
+        },
+        // Otherwise, use an enforce max length accumulator on a folding sink
+        enforceMaxLength(request, maxLength, Accumulator(
+          Sink.fold[ByteString, ByteString](ByteString.empty)((state, bs) => state ++ bs)
+        ).mapFuture(parseBody)).toSink
+      )
+    }
 }
 
 /**

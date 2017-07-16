@@ -10,7 +10,6 @@ import akka.japi.JavaPartialFunction;
 import play.api.mvc.Handler;
 import play.api.routing.HandlerDef;
 import play.api.routing.SimpleRouter$;
-import play.core.j.RequestHeaderImpl;
 import play.libs.typedmap.TypedKey;
 import play.mvc.Http.RequestHeader;
 
@@ -29,7 +28,7 @@ public interface Router {
         return SimpleRouter$.MODULE$.apply(new JavaPartialFunction<play.api.mvc.RequestHeader, Handler>() {
             @Override
             public Handler apply(play.api.mvc.RequestHeader req, boolean isCheck) throws Exception {
-                Optional<Handler> handler = route(new RequestHeaderImpl(req));
+                Optional<Handler> handler = route(req.asJava());
                 if (handler.isPresent()) {
                     return handler.get();
                 } else if (isCheck) {
@@ -65,25 +64,25 @@ public interface Router {
         public static final String ROUTE_VERB = "ROUTE_VERB";
         /**
          * The pattern that the router used to match the path
-         * @deprecated Use <code>Router.Attrs.HandlerDef</code> instead.
+         * @deprecated Use {@link Router.Attrs#HANDLER_DEF} instead.
          */
         @Deprecated
         public static final String ROUTE_PATTERN = "ROUTE_PATTERN";
         /**
          * The controller that was routed to
-         * @deprecated Use <code>Router.Attrs.HandlerDef</code> instead.
+         * @deprecated Use {@link Router.Attrs#HANDLER_DEF} instead.
          */
         @Deprecated
         public static final String ROUTE_CONTROLLER = "ROUTE_CONTROLLER";
         /**
          * The method on the controller that was invoked
-         * @deprecated Use <code>Router.Attrs.HandlerDef</code> instead.
+         * @deprecated Use {@link Router.Attrs#HANDLER_DEF} instead.
          */
         @Deprecated
         public static final String ROUTE_ACTION_METHOD = "ROUTE_ACTION_METHOD";
         /**
          * The comments in the routes file that were above the route
-         * @deprecated Use <code>Router.Attrs.HandlerDef</code> instead.
+         * @deprecated Use {@link Router.Attrs#HANDLER_DEF} instead.
          */
         @Deprecated
         public static final String ROUTE_COMMENTS = "ROUTE_COMMENTS";

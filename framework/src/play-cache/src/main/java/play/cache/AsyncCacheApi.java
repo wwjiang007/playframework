@@ -78,4 +78,12 @@ public interface AsyncCacheApi {
      * @return a CompletionStage containing the value
      */
     CompletionStage<Done> remove(String key);
+
+    /**
+     * Removes all values from the cache. This may be useful as an admin user operation if it is supported by your cache.
+     *
+     * @throws UnsupportedOperationException if this cache implementation does not support removing all values.
+     * @return a CompletionStage containing either a Done when successful or an exception when unsuccessful.
+     */
+    CompletionStage<Done> removeAll();
 }

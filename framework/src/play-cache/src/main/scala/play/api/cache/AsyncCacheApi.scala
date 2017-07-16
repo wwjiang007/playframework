@@ -49,4 +49,12 @@ trait AsyncCacheApi {
    * @return result as a future of Option[T]
    */
   def get[T: ClassTag](key: String): Future[Option[T]]
+
+  /**
+   * Removes all values from the cache. This may be useful as an admin user operation if it is supported by your cache.
+   *
+   * @throws UnsupportedOperationException if this cache implementation does not support removing all values.
+   * @return a Future[Done], which is completed with either a Done or an exception if the clear did not work.
+   */
+  def removeAll(): Future[Done]
 }

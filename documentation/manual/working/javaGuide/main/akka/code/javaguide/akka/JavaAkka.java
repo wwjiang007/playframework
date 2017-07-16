@@ -4,7 +4,7 @@
 package javaguide.akka;
 
 import akka.actor.*;
-import static akka.pattern.Patterns.ask;
+import static akka.pattern.PatternsCS.ask;
 import com.typesafe.config.*;
 import javaguide.testhelpers.MockJavaAction;
 import javaguide.testhelpers.MockJavaActionHelper;
@@ -27,10 +27,14 @@ import static play.test.Helpers.*;
 public class JavaAkka {
 
     private static volatile CountDownLatch latch;
-    public static class MyActor extends UntypedAbstractActor {
+    public static class MyActor extends AbstractActor {
         @Override
-        public void onReceive(Object msg) throws Exception {
-            latch.countDown();
+        public Receive createReceive() {
+            return receiveBuilder()
+              .matchAny(m -> {
+                  latch.countDown();
+              })
+              .build();
         }
     }
 
@@ -77,9 +81,13 @@ public class JavaAkka {
             ActorRef parent = app.injector().instanceOf(play.inject.Bindings.bind(ActorRef.class).qualifiedWith("parent-actor"));
 
             try {
-                String message = (String) FutureConverters.toJava(ask(parent, new ParentActorProtocol.GetChild("my.config"), 1000)).thenCompose(child ->
-                        FutureConverters.toJava(ask((ActorRef) child, new ConfiguredChildActorProtocol.GetConfig(), 1000))
-                ).toCompletableFuture().get(5, TimeUnit.SECONDS);
+                String message = (String) 
+                  ask(parent, new ParentActorProtocol.GetChild("my.config"), 1000)
+                    .thenApply(msg -> (ActorRef) msg)
+                    .thenCompose(child ->
+                        ask(child, new ConfiguredChildActorProtocol.GetConfig(), 1000)
+                    ).toCompletableFuture()
+                    .get(5, TimeUnit.SECONDS);
                 assertThat(message, equalTo("foo"));
             } catch (Exception e) {
                 throw new RuntimeException(e);
@@ -105,60 +113,6 @@ public class JavaAkka {
             }, fakeRequest(), app.getWrappedApplication().materializer());
             assertThat(contentAsString(result), equalTo("Got 2"));
         });
-    }
-
-    @Test
-    public void scheduleActor() throws Exception {
-        Application app = fakeApplication();
-        running(app, () -> {
-            ActorSystem system = app.injector().instanceOf(ActorSystem.class);
-            latch = new CountDownLatch(1);
-            ActorRef testActor = system.actorOf(Props.create(MyActor.class));
-            //#schedule-actor
-            system.scheduler().schedule(
-                Duration.create(0, TimeUnit.MILLISECONDS), //Initial delay 0 milliseconds
-                Duration.create(30, TimeUnit.MINUTES),     //Frequency 30 minutes
-                testActor,
-                "tick",
-                system.dispatcher(),
-                null
-            );
-            //#schedule-actor
-            try {
-                assertTrue(latch.await(5, TimeUnit.SECONDS));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
-    }
-
-    @Test
-    public void scheduleCode() throws Exception {
-        Application app = fakeApplication();
-        running(app, () -> {
-
-            ActorSystem system = app.getWrappedApplication().injector().instanceOf(ActorSystem.class);
-            final CountDownLatch latch = new CountDownLatch(1);
-            class MockFile {
-                void delete() {
-                    latch.countDown();
-                }
-            }
-            final MockFile file = new MockFile();
-            //#schedule-code
-            system.scheduler().scheduleOnce(
-                Duration.create(10, TimeUnit.MILLISECONDS),
-                () -> file.delete(),
-                system.dispatcher()
-            );
-            //#schedule-code
-            try {
-                assertTrue(latch.await(5, TimeUnit.SECONDS));
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        });
 
     }
-
 }

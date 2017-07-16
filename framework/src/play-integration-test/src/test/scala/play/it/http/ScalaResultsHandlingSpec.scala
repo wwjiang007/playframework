@@ -3,7 +3,7 @@
  */
 package play.it.http
 
-import java.nio.file.{ Files => JFiles }
+import java.nio.file.{ Path, Files => JFiles }
 import java.util.Locale.ENGLISH
 
 import akka.stream.scaladsl.Source
@@ -98,6 +98,46 @@ trait ScalaResultsHandlingSpec extends PlaySpecification with WsTestClient with 
         response.header(TRANSFER_ENCODING) must beNone
         response.body must_== "abcdefghi"
       }
+
+    "support responses with custom Content-Types" in {
+      makeRequest(
+        Results.Ok.sendEntity(HttpEntity.Strict(ByteString(0xff.toByte), Some("schmitch/foo; bar=bax")))
+      ) { response =>
+          response.header(CONTENT_TYPE) must beSome("schmitch/foo; bar=bax")
+          response.header(CONTENT_LENGTH) must beSome("1")
+          response.header(TRANSFER_ENCODING) must beNone
+          response.bodyAsBytes must_== ByteString(0xff.toByte)
+        }
+    }
+
+    "support multipart/mixed responses" in {
+      // Example taken from https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html
+      val contentType = "multipart/mixed; boundary=\"simple boundary\""
+      val body: String =
+        """|This is the preamble.  It is to be ignored, though it
+           |is a handy place for mail composers to include an
+           |explanatory note to non-MIME compliant readers.
+           |--simple boundary
+           |
+           |This is implicitly typed plain ASCII text.
+           |It does NOT end with a linebreak.
+           |--simple boundary
+           |Content-type: text/plain; charset=us-ascii
+           |
+           |This is explicitly typed plain ASCII text.
+           |It DOES end with a linebreak.
+           |
+           |--simple boundary--
+           |This is the epilogue.  It is also to be ignored.""".stripMargin
+      makeRequest(
+        Results.Ok.sendEntity(HttpEntity.Strict(ByteString(body), Some(contentType)))
+      ) { response =>
+          response.header(CONTENT_TYPE) must beSome(contentType)
+          response.header(CONTENT_LENGTH) must beSome(body.length.toString)
+          response.header(TRANSFER_ENCODING) must beNone
+          response.body must_== body
+        }
+    }
 
     "chunk results for chunked streaming strategy" in makeRequest(
       Results.Ok.chunked(Source(List("a", "b", "c")))
@@ -303,6 +343,30 @@ trait ScalaResultsHandlingSpec extends PlaySpecification with WsTestClient with 
       }
     }
 
+    "support UTF-8 encoded filenames in Content-Disposition headers" in {
+      val tempFile: Path = JFiles.createTempFile("ScalaResultsHandlingSpec", "txt")
+      try {
+        withServer {
+          import scala.concurrent.ExecutionContext.Implicits.global
+          implicit val mimeTypes: FileMimeTypes = new DefaultFileMimeTypes(FileMimeTypesConfiguration())
+          Results.Ok.sendFile(
+            tempFile.toFile,
+            fileName = _ => "测 试.tmp"
+          )
+        } { port =>
+          val response = BasicHttpClient.makeRequests(port)(
+            BasicRequest("GET", "/", "HTTP/1.1", Map(), "")
+          ).head
+
+          response.status must_== 200
+          response.body must beLeft("")
+          response.headers.get(CONTENT_DISPOSITION) must beSome(s"""inline; filename="? ?.tmp"; filename*=utf-8''%e6%b5%8b%20%e8%af%95.tmp""")
+        }
+      } finally {
+        tempFile.toFile.delete()
+      }
+    }
+
     "split Set-Cookie headers" in {
       import play.api.mvc.Cookie
       val aCookie = Cookie("a", "1")
@@ -311,7 +375,7 @@ trait ScalaResultsHandlingSpec extends PlaySpecification with WsTestClient with 
       makeRequest {
         Results.Ok.withCookies(aCookie, bCookie, cCookie)
       } { response =>
-        response.allHeaders.get(SET_COOKIE) must beSome.like {
+        response.headers.get(SET_COOKIE) must beSome.like {
           case rawCookieHeaders =>
             val decodedCookieHeaders: Set[Set[Cookie]] = rawCookieHeaders.map { headerValue =>
               Cookies.decodeSetCookieHeader(headerValue).to[Set]

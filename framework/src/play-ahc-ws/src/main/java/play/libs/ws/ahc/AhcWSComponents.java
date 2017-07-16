@@ -10,12 +10,13 @@ import play.components.ConfigurationComponents;
 import play.inject.ApplicationLifecycle;
 import play.libs.ws.WSClient;
 import play.shaded.ahc.org.asynchttpclient.AsyncHttpClient;
+import scala.concurrent.ExecutionContext;
 
 /**
  * AsyncHttpClient WS implementation components.
- *
+ * <p>
  * <p>Usage:</p>
- *
+ * <p>
  * <pre>
  * public class MyComponents extends BuiltInComponentsFromContext implements AhcWSComponents {
  *
@@ -44,9 +45,10 @@ public interface AhcWSComponents extends WSClientComponents, ConfigurationCompon
 
     default WSClient wsClient() {
         AsyncHttpClient asyncHttpClient = new AsyncHttpClientProvider(
-            configuration(),
-            environment().asScala(),
-            applicationLifecycle().asScala()
+                environment().asScala(),
+                configuration(),
+                applicationLifecycle().asScala(),
+                executionContext()
         ).get();
 
         return new AhcWSClient(asyncHttpClient, materializer());

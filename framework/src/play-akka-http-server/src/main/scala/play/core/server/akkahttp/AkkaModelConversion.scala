@@ -6,8 +6,10 @@ package play.core.server.akkahttp
 import java.net.{ InetAddress, InetSocketAddress, URI }
 import java.util.Locale
 
+import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers._
+import akka.http.scaladsl.settings.ParserSettings
 import akka.http.scaladsl.util.FastFuture._
 import akka.stream.Materializer
 import akka.stream.scaladsl.Source
@@ -20,15 +22,18 @@ import play.api.mvc.request.{ RemoteConnection, RequestTarget }
 import play.core.server.common.{ ForwardedHeaderHandler, ServerResultUtils }
 import play.mvc.Http.HeaderNames
 
+import scala.annotation.tailrec
 import scala.collection.immutable
 import scala.concurrent.Future
+import scala.util.control.NonFatal
 
 /**
  * Conversions between Akka's and Play's HTTP model objects.
  */
 private[server] class AkkaModelConversion(
     resultUtils: ServerResultUtils,
-    forwardedHeaderHandler: ForwardedHeaderHandler) {
+    forwardedHeaderHandler: ForwardedHeaderHandler,
+    illegalResponseHeaderValue: ParserSettings.IllegalResponseHeaderValueProcessingMode) {
 
   private val logger = Logger(getClass)
 
@@ -99,9 +104,44 @@ private[server] class AkkaModelConversion(
       request.method.name,
       new RequestTarget {
         override lazy val uri: URI = new URI(headers.uri)
+
         override def uriString: String = headers.uri
-        override lazy val path: String = request.uri.path.toString
-        override lazy val queryMap: Map[String, Seq[String]] = request.uri.query().toMultiMap
+
+        override lazy val path: String = {
+          try {
+            request.uri.path.toString
+          } catch {
+            case NonFatal(e) =>
+              logger.warn("Failed to parse path; returning empty string.", e)
+              ""
+          }
+        }
+
+        override lazy val queryMap: Map[String, Seq[String]] = {
+          try {
+            toMultiMap(request.uri.query())
+          } catch {
+            case NonFatal(e) =>
+              logger.warn("Failed to parse query string; returning empty map.", e)
+              Map[String, Seq[String]]()
+          }
+        }
+
+        // This method converts to a `Map`, preserving the order of the query parameters.
+        // It can be removed and replaced with `query().toMultiMap` once this Akka HTTP
+        // fix is available upstream:
+        // https://github.com/akka/akka-http/pull/1270
+        private def toMultiMap(query: Uri.Query): Map[String, Seq[String]] = {
+          @tailrec
+          def append(map: Map[String, Seq[String]], q: Query): Map[String, Seq[String]] = {
+            if (q.isEmpty) {
+              map
+            } else {
+              append(map.updated(q.key, map.getOrElse(q.key, Vector.empty[String]) :+ q.value), q.tail)
+            }
+          }
+          append(Map.empty, query)
+        }
       },
       request.protocol.value,
       headers,
@@ -208,13 +248,10 @@ private[server] class AkkaModelConversion(
   }
 
   def parseContentType(contentType: Option[String]): ContentType = {
-    // actually play allows content types to be not spec compliant
-    // so we can't rely on the parsed content type of akka
     contentType.fold(ContentTypes.NoContentType: ContentType) { ct =>
-      MediaType.custom(ct, binary = true) match {
-        case b: MediaType.Binary => ContentType(b)
-        case _ => ContentTypes.NoContentType
-      }
+      ContentType.parse(ct).left.map { errors =>
+        throw new RuntimeException(s"Error parsing response Content-Type: <$ct>: $errors")
+      }.merge
     }
   }
 
@@ -255,10 +292,28 @@ private[server] class AkkaModelConversion(
     headers.flatMap {
       case (HeaderNames.SET_COOKIE, value) =>
         resultUtils.splitSetCookieHeaderValue(value).map(RawHeader(HeaderNames.SET_COOKIE, _))
+      case (HeaderNames.CONTENT_DISPOSITION, value) =>
+        RawHeader(HeaderNames.CONTENT_DISPOSITION, value) :: Nil
       case (name, value) if name != HeaderNames.TRANSFER_ENCODING =>
         HttpHeader.parse(name, value) match {
           case HttpHeader.ParsingResult.Ok(header, errors /* errors are ignored if Ok */ ) =>
-            header :: Nil
+            if (!header.renderInResponses()) {
+              // since play did not enforce the http spec when it came to headers
+              // we actually relax it by converting the parsed header to a RawHeader
+              // This will still fail on content-type, content-length, transfer-encoding, date, server and connection headers.
+              illegalResponseHeaderValue match {
+                case ParserSettings.IllegalResponseHeaderValueProcessingMode.Warn =>
+                  logger.warn(s"HTTP Header '$header' is not allowed in responses, you can turn off this warning by setting `play.server.akka.illegal-response-header-value-processing-mode = ignore`")
+                  RawHeader(name, value) :: Nil
+                case ParserSettings.IllegalResponseHeaderValueProcessingMode.Ignore =>
+                  RawHeader(name, value) :: Nil
+                case ParserSettings.IllegalResponseHeaderValueProcessingMode.Error =>
+                  logger.error(s"HTTP Header '$header' is not allowed in responses")
+                  Nil
+              }
+            } else {
+              header :: Nil
+            }
           case HttpHeader.ParsingResult.Error(error) =>
             sys.error(s"Error parsing header: $error")
         }
@@ -275,6 +330,7 @@ final case class AkkaHeadersWrapper(
     isChunked: Option[String],
     uri: String
 ) extends Headers(null) {
+
   import AkkaHeadersWrapper._
 
   private lazy val contentType = request.entity.contentType.value

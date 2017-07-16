@@ -39,6 +39,16 @@ If you want to test your application using a browser, you can use [Selenium WebD
 
 @[scalafunctionaltest-testwithbrowser](code/specs2/ScalaFunctionalTestSpec.scala)
 
+## Injecting
+
+There are many functional tests that use the injector directly through the implicit `app`:
+
+@[scalafunctionaltest-noinjecting](code/specs2/ExampleHelpersSpec.scala)
+
+With the [`Injecting`](api/scala/play/api/test/Injecting.html) trait, you can elide this:
+
+@[scalafunctionaltest-injecting](code/specs2/ExampleHelpersSpec.scala)
+
 ## PlaySpecification
 
 [`PlaySpecification`](api/scala/play/api/test/PlaySpecification.html) is an extension of [`Specification`](https://etorreborre.github.io/specs2/api/SPECS2-3.6.6/index.html#org.specs2.mutable.Specification) that excludes some of the mixins provided in the default specs2 specification that clash with Play helpers methods.  It also mixes in the Play test helpers and types for convenience.
@@ -70,3 +80,11 @@ Instead of calling the `Action` yourself, you can let the `Router` do it:
 If you are using an SQL database, you can replace the database connection with an in-memory instance of an H2 database using `inMemoryDatabase`.
 
 @[scalafunctionaltest-testmodel](code/specs2/ScalaFunctionalTestSpec.scala)
+
+## Testing Messages API
+
+For functional tests that involve configuration, the best option is to use `WithApplication` and pull in an injected [`MessagesApi`](api/scala/play/api/i18n/MessagesApi.html):
+
+@[scalafunctionaltest-testmessages](code/specs2/ScalaFunctionalTestSpec.scala)
+
+If you need to customize the configuration, it's better to add configuration values into the GuiceApplicationBuilder rather than use the DefaultMessagesApiProvider directly.

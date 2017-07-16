@@ -8,8 +8,6 @@ import javaguide.testhelpers.MockJavaAction;
 import org.junit.Test;
 import play.core.j.JavaContextComponents;
 import play.core.j.JavaHandlerComponents;
-import play.i18n.Langs;
-import play.i18n.MessagesApi;
 import play.libs.Json;
 import play.mvc.Http.Cookie;
 import play.mvc.Result;
@@ -111,8 +109,7 @@ public class JavaResponse extends WithApplication {
         assertThat(cookie.domain(), equalTo(".example.com"));
         assertThat(cookie.secure(), equalTo(false));
         assertThat(cookie.httpOnly(), equalTo(true));
-        assertThat(cookie.sameSite(),
-            equalTo(Optional.of(Cookie.SameSite.STRICT)));
+        assertThat(cookie.sameSite(), equalTo(Optional.of(Cookie.SameSite.STRICT)));
         removeContext();
     }
 

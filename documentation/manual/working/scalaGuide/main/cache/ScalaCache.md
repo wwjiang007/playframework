@@ -23,6 +23,16 @@ To add only the API, add `cacheApi` to your dependencies list.
 
 The API dependency is useful if you'd like to define your own bindings for the `Cached` helper and `AsyncCacheApi`, etc., without having to depend on Ehcache. If you're writing a custom cache module you should use this.
 
+## JCache Support
+
+Ehcache implements the [JSR 107](https://github.com/jsr107/jsr107spec) specification, also known as JCache, but Play does not bind `javax.caching.CacheManager` by default.  To bind `javax.caching.CacheManager` to the default provider, add the following to your dependencies list:
+
+@[jcache-sbt-dependencies](code/cache.sbt)
+
+If you are using Guice, you can add the following for Java annotations:
+
+@[jcache-guice-annotation-sbt-dependencies](code/cache.sbt)
+
 ## Accessing the Cache API
 
 The cache API is defined by the [AsyncCacheApi](api/scala/play/api/cache/AsyncCacheApi.html) and [SyncCacheApi](api/scala/play/api/cache/SyncCacheApi.html) traits, depending on whether you want an asynchronous or synchronous implementation, and can be injected into your component like any other dependency.  For example:
@@ -50,6 +60,12 @@ You can specify an expiry duration by passing a duration, by default the duratio
 To remove an item from the cache use the `remove` method:
 
 @[remove-value](code/ScalaCache.scala)
+
+To remove all items from the cache use the `removeAll` method:
+
+@[removeAll-values](code/ScalaCache.scala)
+
+`removeAll()` is only available on `AsyncCacheApi`, since removing all elements of the cache is rarely something you want to do sychronously. The expectation is that removing all items from the cache should only be needed as an admin operation in special cases, not part of the normal operation of your app.
 
 Note that the [SyncCacheApi](api/scala/play/api/cache/SyncCacheApi.html) has the same API, except it returns the values directly instead of using futures.
 
@@ -110,5 +126,7 @@ play.modules.disabled += "play.api.cache.ehcache.EhCacheModule"
 ```
 
 You can then implement [AsyncCacheApi](api/java/play/cache/AsyncCacheApi.html) and bind it in the DI container. You can also bind [SyncCacheApi](api/java/play/cache/SyncCacheApi.html) to [DefaultSyncCacheApi](api/java/play/cache/DefaultSyncCacheApi.html), which simply wraps the async implementation.
+
+Note that the `removeAll` method may not be supported by your cache implementation, either because it is not possible or because it would be unnecessarily inefficient. If that is the case, you can throw an `UnsupportedOperationException` in the `removeAll` method.
 
 To provide an implementation of the cache API in addition to the default implementation, you can either create a custom qualifier, or reuse the `NamedCache` qualifier to bind the implementation.

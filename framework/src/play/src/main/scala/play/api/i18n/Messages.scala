@@ -4,14 +4,20 @@
 package play.api.i18n
 
 import java.net.URL
+import java.util.Collections
+import java.util.function.Function
+import java.util.stream.Collectors
 import javax.inject.{ Inject, Provider, Singleton }
 
 import play.api._
 import play.api.http.HttpConfiguration
 import play.api.mvc._
+import play.libs.Scala
 import play.mvc.Http
 import play.utils.{ PlayIO, Resources }
 
+import scala.annotation.implicitNotFound
+import scala.collection.mutable
 import scala.io.Codec
 import scala.language._
 import scala.util.parsing.combinator._
@@ -25,7 +31,7 @@ import scala.util.parsing.input._
  * val msgString = Messages("items.found", items.size)
  * }}}
  */
-object Messages {
+object Messages extends MessagesImplicits {
 
   private[play] val messagesApiCache = Application.instanceCache[MessagesApi]
 
@@ -249,6 +255,7 @@ case class MessagesImpl(lang: Lang, messagesApi: MessagesApi) extends Messages {
  * extend Product and does not expose MessagesApi as part of
  * its interface.
  */
+@implicitNotFound("An implicit Messages instance was not found.  Please see https://www.playframework.com/documentation/latest/ScalaI18N")
 trait Messages extends MessagesProvider {
 
   /**
@@ -310,8 +317,15 @@ trait Messages extends MessagesProvider {
 /**
  * This trait is used to indicate when a Messages instance can be produced.
  */
+@implicitNotFound("An implicit MessagesProvider instance was not found.  Please see https://www.playframework.com/documentation/2.6.x/ScalaForms#Passing-MessagesProvider-to-Form-Helpers")
 trait MessagesProvider {
   def messages: Messages
+}
+
+trait MessagesImplicits {
+  implicit def implicitMessagesProviderToMessages(implicit messagesProvider: MessagesProvider): Messages = {
+    messagesProvider.messages
+  }
 }
 
 /**
@@ -413,6 +427,23 @@ class DefaultMessagesApi @Inject() (
     val langCookieSecure: Boolean = false,
     val langCookieHttpOnly: Boolean = false,
     val httpConfiguration: HttpConfiguration = HttpConfiguration()) extends MessagesApi {
+
+  // Java API
+  def this(javaMessages: java.util.Map[String, java.util.Map[String, String]], langs: play.i18n.Langs) = {
+    this(
+      Scala.asScala(javaMessages).map { case (k, v) => (k, Scala.asScala(v)) },
+      langs.asScala(),
+      "PLAY_LANG",
+      false,
+      false,
+      HttpConfiguration()
+    )
+  }
+
+  // Java API
+  def this(messages: java.util.Map[String, java.util.Map[String, String]]) = {
+    this(messages, new DefaultLangs().asJava)
+  }
 
   import java.text._
 

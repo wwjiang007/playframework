@@ -6,8 +6,6 @@ package play.api.data
 import play.api.data.format._
 import play.api.data.validation._
 
-import scala.annotation._
-
 /**
  * Contains data manipulation helpers (typically HTTP form handling)
  *
@@ -52,10 +50,10 @@ object Forms {
    * )
    * }}}
    *
-   * @tparam T the mapped type
-   * @param apply A function able to create a value of T from a value of A1 (If T is case class you can use its own apply function)
-   * @param unapply A function able to create A1 from a value of T (If T is a case class you can use its own unapply function)
-   * @return a mapping for type `T`
+   * @tparam R the mapped type
+   * @param apply A function able to create a value of R from a value of A1 (If R is case class you can use its own apply function)
+   * @param unapply A function able to create A1 from a value of R (If R is a case class you can use its own unapply function)
+   * @return a mapping for type `R`
    */
   def mapping[R, A1](a1: (String, Mapping[A1]))(apply: Function1[A1, R])(unapply: Function1[R, Option[(A1)]]): Mapping[R] = {
     new ObjectMapping1(apply, unapply, a1)
@@ -534,7 +532,14 @@ object Forms {
    *   Form("birthdate" -> sqlDate)
    * }}}
    */
-  val sqlDate: Mapping[java.sql.Date] = of[java.sql.Date]
+  val sqlDate: Mapping[java.sql.Date] = of[java.sql.Date](sqlDateFormat)
+
+  @deprecated("Use sqlDate(pattern). SQL dates do not have time zones.", "2.6.2")
+  def sqlDate(pattern: String, timeZone: java.util.TimeZone): Mapping[java.sql.Date] = sqlDate(pattern)
+
+  // Added for bincompat
+  @deprecated("This method will be removed when sqlDate(pattern, timeZone) is removed.", "2.6.2")
+  private[data] def sqlDate$default$2: java.util.TimeZone = java.util.TimeZone.getDefault
 
   /**
    * Constructs a simple mapping for a date field (mapped as `sql.Date type`).
@@ -545,9 +550,31 @@ object Forms {
    * }}}
    *
    * @param pattern the date pattern, as defined in `java.text.SimpleDateFormat`
+   */
+  def sqlDate(pattern: String): Mapping[java.sql.Date] = of[java.sql.Date] as sqlDateFormat(pattern)
+
+  /**
+   * Constructs a simple mapping for a timestamp field (mapped as `java.sql.Timestamp type`).
+   *
+   * For example:
+   * {{{
+   *   Form("birthdate" -> sqlTimestamp)
+   * }}}
+   */
+  val sqlTimestamp: Mapping[java.sql.Timestamp] = of[java.sql.Timestamp](sqlTimestampFormat)
+
+  /**
+   * Constructs a simple mapping for a Timestamp field (mapped as `java.sql.Timestamp type`).
+   *
+   * For example:
+   * {{{
+   *   Form("birthdate" -> sqlTimestamp("dd-MM-yyyy hh:mm:ss"))
+   * }}}
+   *
+   * @param pattern the date pattern, as defined in `java.text.SimpleDateFormat`
    * @param timeZone the `java.util.TimeZone` to use for parsing and formatting
    */
-  def sqlDate(pattern: String, timeZone: java.util.TimeZone = java.util.TimeZone.getDefault): Mapping[java.sql.Date] = of[java.sql.Date] as sqlDateFormat(pattern, timeZone)
+  def sqlTimestamp(pattern: String, timeZone: java.util.TimeZone = java.util.TimeZone.getDefault): Mapping[java.sql.Timestamp] = of[java.sql.Timestamp] as sqlTimestampFormat(pattern, timeZone)
 
   /**
    * Constructs a simple mapping for an e-mail field.

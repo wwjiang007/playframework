@@ -4,7 +4,8 @@
 import BuildSettings._
 import Dependencies._
 import Generators._
-import com.typesafe.tools.mima.plugin.MimaKeys.{ mimaPreviousArtifacts, mimaReportBinaryIssues }
+import com.typesafe.tools.mima.plugin.MimaKeys.{ mimaPreviousArtifacts, mimaReportBinaryIssues, mimaBinaryIssueFilters }
+import com.typesafe.tools.mima.core._
 import interplay.PlayBuildBase.autoImport._
 import sbt.Keys.parallelExecution
 import sbt.ScriptedPlugin._
@@ -45,6 +46,12 @@ lazy val PlayNettyUtilsProject = PlayNonCrossBuiltProject("Play-Netty-Utils", "p
       javacOptions in(Compile, doc) += "-Xdoclint:none",
       libraryDependencies ++= nettyUtilsDependencies
     )
+
+lazy val PlayJodaFormsProject = PlayCrossBuiltProject("Play-Joda-Forms", "play-joda-forms")
+    .settings(
+      libraryDependencies ++= joda
+    )
+    .dependsOn(PlayProject, PlaySpecs2Project % "test")
 
 lazy val PlayProject = PlayCrossBuiltProject("Play", "play")
     .enablePlugins(SbtTwirl)
@@ -89,12 +96,13 @@ lazy val PlayNettyServerProject = PlayCrossBuiltProject("Play-Netty-Server", "pl
 
 import AkkaDependency._
 lazy val PlayAkkaHttpServerProject = PlayCrossBuiltProject("Play-Akka-Http-Server", "play-akka-http-server")
-    // Include scripted tests here as well as in the SBT Plugin, because we
-    // don't want the SBT Plugin to have a dependency on an experimental module.
-    //.settings(ScriptedPlugin.scriptedSettings ++ playScriptedSettings)
     .dependsOn(PlayServerProject, StreamsProject)
     .dependsOn(PlayGuiceProject % "test")
     .addAkkaModuleDependency("akka-http-core")
+
+lazy val PlayAkkaHttp2SupportProject = PlayCrossBuiltProject("Play-Akka-Http2-Support", "play-akka-http2-support")
+    .dependsOn(PlayAkkaHttpServerProject)
+    .addAkkaModuleDependency("akka-http2-support")
 
 lazy val PlayJdbcApiProject = PlayCrossBuiltProject("Play-JDBC-Api", "play-jdbc-api")
     .dependsOn(PlayProject)
@@ -204,7 +212,7 @@ lazy val PlayAhcWsProject = PlayCrossBuiltProject("Play-AHC-WS", "play-ahc-ws")
     parallelExecution in Test := false,
     // quieten deprecation warnings in tests
     scalacOptions in Test := (scalacOptions in Test).value diff Seq("-deprecation")
-  ).dependsOn(PlayWsProject, PlayJavaProject)
+  ).dependsOn(PlayWsProject, PlayEhcacheProject % "test")
   .dependsOn(PlaySpecs2Project % "test")
   .dependsOn(PlayTestProject % "test->test")
 
@@ -273,6 +281,17 @@ lazy val PlayEhcacheProject = PlayCrossBuiltProject("Play-Ehcache", "play-ehcach
       PlaySpecs2Project % "test"
     )
 
+// JSR 107 cache bindings (note this does not depend on ehcache)
+lazy val PlayJCacheProject = PlayCrossBuiltProject("Play-JCache", "play-jcache")
+    .settings(
+      libraryDependencies ++= jcacheApi
+    )
+    .dependsOn(
+      PlayProject,
+      PlayEhcacheProject % "test", // provide a cachemanager implementation
+      PlaySpecs2Project % "test"
+    )
+
 lazy val PlayDocsSbtPlugin = PlaySbtPluginProject("Play-Docs-SBT-Plugin", "play-docs-sbt-plugin")
     .enablePlugins(SbtTwirl)
     .settings(
@@ -286,13 +305,16 @@ lazy val publishedProjects = Seq[ProjectReference](
   RoutesCompilerProject,
   SbtRoutesCompilerProject,
   PlayAkkaHttpServerProject,
+  PlayAkkaHttp2SupportProject,
   PlayCacheProject,
   PlayEhcacheProject,
+  PlayJCacheProject,
   PlayJdbcApiProject,
   PlayJdbcProject,
   PlayJdbcEvolutionsProject,
   PlayJavaProject,
   PlayJavaFormsProject,
+  PlayJodaFormsProject,
   PlayJavaJdbcProject,
   PlayJpaProject,
   PlayNettyUtilsProject,
@@ -317,6 +339,7 @@ lazy val publishedProjects = Seq[ProjectReference](
 
 lazy val PlayFramework = Project("Play-Framework", file("."))
     .enablePlugins(PlayRootProject)
+    .enablePlugins(PlayWhitesourcePlugin)
     .enablePlugins(CrossPerProjectPlugin)
     .settings(playCommonSettings: _*)
     .settings(
@@ -327,6 +350,8 @@ lazy val PlayFramework = Project("Play-Framework", file("."))
       Docs.apiDocsInclude := false,
       Docs.apiDocsIncludeManaged := false,
       mimaReportBinaryIssues := (),
-      commands += Commands.quickPublish
+      commands += Commands.quickPublish,
+      whitesourceAggregateProjectName := "playframework-master",
+      whitesourceAggregateProjectToken := "f21388d8-a520-4d3a-afbd-b5cadcea0a6d"
     ).settings(Release.settings: _*)
     .aggregate(publishedProjects: _*)

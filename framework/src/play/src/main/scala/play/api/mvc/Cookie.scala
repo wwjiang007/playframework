@@ -59,7 +59,8 @@ object Cookie {
     def asJava: play.mvc.Http.Cookie.SameSite = play.mvc.Http.Cookie.SameSite.parse(value).get
   }
   object SameSite {
-    def parse(value: String): Option[SameSite] = Seq(Strict, Lax).find(_ matches value)
+    private[play] val values: Seq[SameSite] = Seq(Strict, Lax)
+    def parse(value: String): Option[SameSite] = values.find(_ matches value)
     case object Strict extends SameSite("Strict")
     case object Lax extends SameSite("Lax")
   }
@@ -132,10 +133,10 @@ trait Cookies extends Traversable[Cookie] {
 /**
  * Helper utilities to encode Cookies.
  */
-@deprecated("Inject [[play.api.mvc.CookieHeaderEncoding]] instead", "2.6.0")
 object Cookies extends CookieHeaderEncoding {
 
   // Use global state for cookie header configuration
+  @deprecated("Inject play.api.mvc.CookieHeaderEncoding instead", "2.6.0")
   override protected def config: CookiesConfiguration = HttpConfiguration.current.cookies
 
   def apply(cookies: Seq[Cookie]): Cookies = new Cookies {
@@ -411,7 +412,7 @@ trait CookieBaker[T <: AnyRef] { self: CookieDataCodec =>
    */
   def encodeAsCookie(data: T): Cookie = {
     val cookie = encode(serialize(data))
-    Cookie(COOKIE_NAME, cookie, maxAge, path, domain, secure, httpOnly)
+    Cookie(COOKIE_NAME, cookie, maxAge, path, domain, secure, httpOnly, sameSite)
   }
 
   /**
@@ -596,6 +597,18 @@ trait JWTCookieDataCodec extends CookieDataCodec {
       case e: ExpiredJwtException =>
         val id = e.getClaims.getId
         logger.warn(s"decode: expired JWT found! id = $id, message = ${e.getMessage}")(SecurityMarkerContext)
+        Map.empty
+
+      case e: io.jsonwebtoken.SignatureException =>
+        // Thrown when an invalid cookie signature is found -- this can be confusing to end users
+        // so give a special logging message to indicate problem.
+
+        logger.warn(s"decode: cookie has invalid signature! message = ${e.getMessage}")(SecurityMarkerContext)
+        val devLogger = logger.forMode(Mode.Dev)
+        devLogger.info(
+          s"""The JWT signature in the cookie does not match the locally computed signature with the server.
+             |This usually indicates the browser has a leftover cookie from another Play application,
+             |so clearing cookies may resolve this error message.""".stripMargin)
         Map.empty
 
       case NonFatal(e) =>

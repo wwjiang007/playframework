@@ -1,3 +1,6 @@
+/*
+ * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
+ */
 //#inject-sird-router
 package api
 
@@ -17,6 +20,6 @@ class ApiRouter @Inject()(controller: ApiController)
 }
 //#inject-sird-router
 
-class ApiController extends Controller {
+class ApiController @Inject()(cc:ControllerComponents) extends AbstractController(cc) {
   def index() = TODO
 }

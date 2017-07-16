@@ -12,6 +12,7 @@ import akka.stream.scaladsl.{ Flow, Keep, Sink, Source }
 import akka.stream.stage._
 import akka.util.ByteString
 import play.api.MarkerContexts.SecurityMarkerContext
+import play.api.http.HttpEntity
 import play.api.http.HeaderNames._
 import play.api.http.SessionConfiguration
 import play.api.libs.crypto.CSRFTokenSigner
@@ -376,6 +377,13 @@ class CSRFActionHelper(
   }
 
   /**
+   * @return true if the token is HTTP only, i.e. the token cannot be accessed from client-side JavaScript.
+   */
+  private def tokenIsHttpOnly: Boolean = {
+    if (csrfConfig.cookieName.isDefined) csrfConfig.httpOnlyCookie else sessionConfiguration.httpOnly
+  }
+
+  /**
    * Get the header token, that is, the token that should be validated.
    */
   def getTokenToValidate(request: RequestHeader): Option[String] = {
@@ -444,7 +452,7 @@ class CSRFActionHelper(
   }
 
   def requiresCsrfCheck(request: RequestHeader): Boolean = {
-    if (csrfConfig.bypassCorsTrustedOrigins && request.tags.contains(CORSFilter.RequestTag)) {
+    if (csrfConfig.bypassCorsTrustedOrigins && request.attrs.contains(CORSFilter.Attrs.Origin)) {
       filterLogger.trace("[CSRF] Bypassing check because CORSFilter request tag found")
       false
     } else {
@@ -457,7 +465,11 @@ class CSRFActionHelper(
       case None =>
         filterLogger.warn("[CSRF] No token found on request!")
         result
-      case Some(tokenInfo) if !tokenInfo.wasRendered =>
+      case Some(tokenInfo) if {
+        tokenIsHttpOnly && // the token is not going to be accessed and used from JS
+          result.body.isInstanceOf[HttpEntity.Strict] && // the body was fully rendered
+          !tokenInfo.wasRendered // the token was not rendered in the body of the response
+      } =>
         filterLogger.trace("[CSRF] Not emitting CSRF token because token was never rendered")
         result
       case _ if isCached(result) =>

@@ -7,7 +7,7 @@ Form handling and submission is an important part of any web application.  Play 
 
 Play's form handling approach is based around the concept of binding data.  When data comes in from a POST request, Play will look for formatted values and bind them to a [`Form`](api/scala/play/api/data/Form.html) object.  From there, Play can use the bound form to value a case class with data, call custom validations, and so on.
 
-Typically forms are used directly from a `Controller` instance.  However, [`Form`](api/scala/play/api/data/Form.html) definitions do not have to match up exactly with case classes or models: they are purely for handling input and it is reasonable to use a distinct `Form` for a distinct POST.
+Typically forms are used directly from a [`BaseController`](api/scala/play/api/mvc/BaseController.html) instance.  However, [`Form`](api/scala/play/api/data/Form.html) definitions do not have to match up exactly with case classes or models: they are purely for handling input and it is reasonable to use a distinct `Form` for a distinct POST.
 
 ## Imports
 
@@ -112,7 +112,7 @@ Alternatively, you can use the `parse.form` [[body parser|ScalaBodyParsers]] tha
 
 @[form-bodyparser](code/ScalaForms.scala)
 
-In the failure case, the default behaviour is to return an empty BadRequest response. You can override this behaviour with your own logic. For instance, the following code is completely equivalent to the preceding one using `bindFromRequest` and `fold`.
+In the failure case, the default behaviour is to return an empty `BadRequest` response. You can override this behaviour with your own logic. For instance, the following code is completely equivalent to the preceding one using `bindFromRequest` and `fold`.
 
 @[form-bodyparser-errors](code/ScalaForms.scala)
 
@@ -161,15 +161,23 @@ The generic `input` helper mentioned above will let you code the desired HTML re
 
 For complex form elements, you can also create your own custom view helpers (using scala classes in the `views` package) and [[custom field constructors|ScalaCustomFieldConstructors]].
 
-### Passing Messages to Form Helpers
+### Passing MessagesProvider to Form Helpers
 
 The form helpers above -- [`input`](api/scala/views/html/helper/input$.html), [`checkbox`](api/scala/views/html/helper/checkbox$.html), and so on -- all take [`MessagesProvider`](api/scala/play/api/i18n/MessagesProvider.html) as an implicit parameter.  The form handlers need to take [`MessagesProvider`](api/scala/play/api/i18n/MessagesProvider.html) because they need to provide error messages mapped to the language defined in the request.  You can see more about [`Messages`](api/scala/play/api/i18n/Messages.html) in the [[Internationalization with Messages|ScalaI18N]] page.
 
-There are two ways to pass in the [`Messages`](api/scala/play/api/i18n/Messages.html) object required.
-  
-The first way is to make the controller extend [`play.api.i18n.I18nSupport`](api/scala/play/api/i18n/I18nSupport.html), which makes use of an injected [`MessagesApi`](api/scala/play/api/i18n/MessagesApi.html), and use an implicit conversion from an implicit request to [`Messages`](api/scala/play/api/i18n/Messages.html):
+There are two ways to pass in the [`MessagesProvider`](api/scala/play/api/i18n/MessagesProvider.html) object required.
+
+#### Option One: Implicitly Convert Request to Messages
+
+The first way is to make the controller extend [`play.api.i18n.I18nSupport`](api/scala/play/api/i18n/I18nSupport.html), which makes use of an injected [`MessagesApi`](api/scala/play/api/i18n/MessagesApi.html), and will implicitly convert an implicit request to an implicit [`Messages`](api/scala/play/api/i18n/Messages.html):
 
 @[messages-controller](code/ScalaForms.scala)
+
+This means that the following form template will be resolved:
+
+@[form-define](code/scalaguide/forms/scalaforms/views/implicitMessages.scala.html)
+
+#### Option Two: Use MessagesRequest
 
 The second way is to dependency inject a [`MessagesActionBuilder`](api/scala/play/api/mvc/MessagesActionBuilder.html), which provides a [`MessagesRequest`](api/scala/play/api/mvc/MessagesRequest.html):
 
@@ -177,9 +185,13 @@ The second way is to dependency inject a [`MessagesActionBuilder`](api/scala/pla
 
 This is useful because to use [[CSRF|ScalaCsrf]] with forms, both a `Request` (technically a `RequestHeader`) and a [`Messages`](api/scala/play/api/i18n/Messages.html) object must be available to the template.  By using a [`MessagesRequest`](api/scala/play/api/mvc/MessagesRequest.html), which is a [`WrappedRequest`](api/scala/play/api/mvc/WrappedRequest.html) that extends [`MessagesProvider`](api/scala/play/api/i18n/MessagesProvider.html), only a single implicit parameter needs to be made available to templates.
 
+Because you typically don't need the body of the request, you can pass [`MessagesRequestHeader`](api/scala/play/api/mvc/MessagesRequestHeader.html), rather than typing `MessagesRequest[_]`:
+
 @[form-define](code/scalaguide/forms/scalaforms/views/messages.scala.html)
 
-You can always use [[action composition|ScalaActionsComposition]] and extend [AbstractController](api/scala/play/api/mvc/AbstractController.html) to incorporate form processing into your controllers.
+Rather than inject [`MessagesActionBuilder`](api/scala/play/api/mvc/MessagesActionBuilder.html) into your controller, you can also make [`MessagesActionBuilder`](api/scala/play/api/mvc/MessagesActionBuilder.html) be the default `Action` by extending [MessagesAbstractController](api/scala/play/api/mvc/MessagesAbstractController.html) to incorporate form processing into your controllers.
+
+@[messages-abstract-controller](code/ScalaForms.scala)
 
 ### Displaying errors in a view template
 
@@ -304,6 +316,13 @@ You can populate a form with initial values using [`Form#fill`](api/scala/play/a
 Or you can define a default mapping on the number using [`Forms.default`](api/scala/play/api/data/Forms$.html):
 
 @[userForm-default](code/ScalaForms.scala)
+
+Keep in mind that default values are used only when:
+ 
+1. Populating the `Form` from data, for example, from the request
+2. And there is no corresponding data for the field.
+ 
+The default value is not used when creating the form.
 
 ### Ignored values
 

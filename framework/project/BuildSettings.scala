@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2009-2017 Lightbend Inc. <https://www.lightbend.com>
  */
-import com.typesafe.sbt.SbtScalariform._
 import sbt.ScriptedPlugin._
 import sbt._
 import Keys.{version, _}
@@ -44,7 +43,7 @@ object BuildSettings {
    * File header settings
    */
   val fileHeaderSettings = Seq(
-    excludes := Seq("*/netty/utils/*", "*/inject/SourceProvider.java"),
+    excludes := Seq("*/cookie/encoding/*", "*/inject/SourceProvider.java"),
     headers := Map(
       "scala" -> (HeaderPattern.cStyleBlockComment,
         """|/*
@@ -182,6 +181,10 @@ object BuildSettings {
       ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.ApplicationLoader#Context.copy$default$5"),
       ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.core.ObjectMapperComponents.applicationLifecycle"),
       ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.core.server.NettyServerComponents.applicationLifecycle"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.http.CookiesConfiguration.serverEncoder"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.http.CookiesConfiguration.serverDecoder"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.http.CookiesConfiguration.clientEncoder"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.http.CookiesConfiguration.clientDecoder"),
       ProblemFilters.exclude[IncompatibleMethTypeProblem]("play.api.ApplicationLoader.createContext"),
       ProblemFilters.exclude[IncompatibleMethTypeProblem]("play.api.ApplicationLoader#Context.apply"),
       ProblemFilters.exclude[IncompatibleMethTypeProblem]("play.api.ApplicationLoader#Context.copy"),
@@ -190,12 +193,57 @@ object BuildSettings {
       ProblemFilters.exclude[ReversedMissingMethodProblem]("play.core.ObjectMapperComponents.applicationLifecycle"),
       ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.NettyServerComponents.applicationLifecycle"),
       ProblemFilters.exclude[ReversedMissingMethodProblem]("play.core.server.NettyServerComponents.applicationLifecycle"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.common.ServerResultUtils.sessionBaker"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.common.ServerResultUtils.cookieHeaderEncoding"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.common.ServerResultUtils.flashBaker"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.common.ServerResultUtils.this"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.CONTENT_SECURITY_POLICY"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.play$api$http$HeaderNames$_setter_$CONTENT_SECURITY_POLICY_="),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.play$api$http$HeaderNames$_setter_$X_XSS_PROTECTION_="),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.X_XSS_PROTECTION"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.play$api$http$HeaderNames$_setter_$REFERRER_POLICY_="),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.REFERRER_POLICY"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.X_CONTENT_TYPE_OPTIONS"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.play$api$http$HeaderNames$_setter_$X_CONTENT_TYPE_OPTIONS_="),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.X_PERMITTED_CROSS_DOMAIN_POLICIES"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.play$api$http$HeaderNames$_setter_$X_PERMITTED_CROSS_DOMAIN_POLICIES_="),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.X_FRAME_OPTIONS"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.http.HeaderNames.play$api$http$HeaderNames$_setter_$X_FRAME_OPTIONS_="),
 
       // private
       ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.akkahttp.AkkaModelConversion.this"),
 
       // Added method to PlayBodyParsers, which is a Play API not meant to be extended by end users.
-      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.mvc.PlayBodyParsers.byteString")
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.mvc.PlayBodyParsers.byteString"),
+
+      // Refactoring to unify AkkaHttpServer and NettyServer fromRouter methods
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.core.server.NettyServer.fromRouter"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.core.server.AkkaHttpServer.fromRouter"),
+
+      // Moved play[private] out of from companion object to allow it to access member variables
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.api.test.TestServer.start"),
+
+      // Added component so configuration would work properly
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.cache.ehcache.EhCacheComponents.actorSystem"),
+
+      // Changed this private[play] type to a Lock to allow explicit locking
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.test.PlayRunners.mutex"),
+
+      // Deprecate ApplicationProvider.handleWebCommands and pass BuildLink through ApplicationLoader.Context
+      ProblemFilters.exclude[FinalClassProblem]("play.api.OptionalSourceMapper"),
+      ProblemFilters.exclude[MissingTypesProblem]("play.api.ApplicationLoader$Context$"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.api.ApplicationLoader#Context.copy"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.ApplicationLoader#Context.copy$default$4"),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.ApplicationLoader#Context.copy$default$3"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.api.ApplicationLoader#Context.this"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.AkkaHttpServerComponents.sourceMapper"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.AkkaHttpServerComponents.webCommands"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.BuiltInComponents.play$api$BuiltInComponents$$defaultWebCommands"),
+      ProblemFilters.exclude[ReversedMissingMethodProblem]("play.api.BuiltInComponents.play$api$BuiltInComponents$_setter_$play$api$BuiltInComponents$$defaultWebCommands_="),
+      ProblemFilters.exclude[IncompatibleResultTypeProblem]("play.api.ApplicationLoader#Context.copy$default$2"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.api.ApplicationLoader#Context.copy$default$5"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.NettyServerComponents.sourceMapper"),
+      ProblemFilters.exclude[DirectMissingMethodProblem]("play.core.server.NettyServerComponents.webCommands")
     ),
     unmanagedSourceDirectories in Compile += {
       (sourceDirectory in Compile).value / s"scala-${scalaBinaryVersion.value}"
@@ -258,7 +306,7 @@ object BuildSettings {
     scriptedLaunchOpts ++= Seq(
       "-Xmx768m",
       maxMetaspace,
-      "-Dscala.version=" + sys.props.get("scripted.scala.version").getOrElse(sys.props.get("scala.version").getOrElse("2.12.2"))
+      "-Dscala.version=" + sys.props.get("scripted.scala.version").orElse(sys.props.get("scala.version")).getOrElse("2.12.4")
     )
   )
 
@@ -283,6 +331,9 @@ object BuildSettings {
         .enablePlugins(PlaySbtPlugin)
         .settings(playCommonSettings: _*)
         .settings(playScriptedSettings: _*)
+        .settings(
+          fork in Test := false
+        )
   }
 
 }

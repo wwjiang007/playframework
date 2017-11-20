@@ -170,8 +170,8 @@ class AllowedHostsFilterSpec extends PlaySpecification {
       """
         |play.filters.hosts.allowed = ["localhost"]
       """.stripMargin) { ws =>
-      val wsRequest = ws.url(s"http://localhost:$TestServerPort").withHeaders(X_FORWARDED_HOST -> "evil.com").get()
-      val wsResponse = Await.result(wsRequest, 1.second)
+      val wsRequest = ws.url(s"http://localhost:$TestServerPort").addHttpHeaders(X_FORWARDED_HOST -> "evil.com").get()
+      val wsResponse = Await.result(wsRequest, 5.seconds)
       wsResponse.status must_== OK
       wsResponse.body must_== s"localhost:$TestServerPort"
     }

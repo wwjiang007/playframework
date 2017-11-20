@@ -324,8 +324,8 @@ object HttpBinApplication {
   }
 
   def app = {
-    new BuiltInComponentsFromContext(ApplicationLoader.createContext(Environment.simple())) with AhcWSComponents with NoHttpFiltersComponents {
-      implicit lazy val Action = defaultActionBuilder
+    new BuiltInComponentsFromContext(ApplicationLoader.Context.create(Environment.simple())) with AhcWSComponents with NoHttpFiltersComponents {
+      override implicit lazy val Action = defaultActionBuilder
       def router = SimpleRouter(
         PartialFunction.empty
           .orElse(getIp)

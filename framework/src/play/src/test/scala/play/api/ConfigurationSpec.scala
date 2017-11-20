@@ -5,7 +5,7 @@ package play.api
 
 import java.io._
 
-import com.typesafe.config.ConfigException
+import com.typesafe.config.{ ConfigException, ConfigFactory }
 import org.specs2.mutable.Specification
 
 import scala.util.control.NonFatal
@@ -33,6 +33,26 @@ class ConfigurationSpec extends Specification {
   )
 
   "Configuration" should {
+
+    import scala.concurrent.duration._
+    "support getting durations" in {
+
+      "simple duration" in {
+        val conf = config("my.duration" -> "10s")
+        conf.get[Duration]("my.duration") must beEqualTo(10.seconds)
+      }
+
+      "handle 'infinite' as Duration.Inf" in {
+        val conf = config("my.duration" -> "infinite")
+        conf.get[Duration]("my.duration") must beEqualTo(Duration.Inf)
+      }
+
+      "handle null as Duration.Inf" in {
+        val conf = config("my.duration" -> null)
+        conf.get[Duration]("my.duration") must beEqualTo(Duration.Inf)
+      }
+
+    }
 
     "support getting optional values" in {
       "when null" in {
@@ -80,16 +100,58 @@ class ConfigurationSpec extends Specification {
     }
 
     "make all get accessible using scala" in {
-      exampleConfig.getBooleanSeq("blah.0").get must ===(Seq(true, false, true))
-      exampleConfig.getIntSeq("blah.1").get must ===(Seq(1, 2, 3))
-      exampleConfig.getDoubleSeq("blah.2").get must ===(Seq(1.1, 2.2, 3.3))
-      exampleConfig.getLongSeq("blah.3").get must ===(Seq(1L, 2L, 3L))
-      exampleConfig.getStringSeq("blah.4").get must contain(exactly("one", "two", "three"))
+      exampleConfig.get[Seq[Boolean]]("blah.0") must ===(Seq(true, false, true))
+      exampleConfig.get[Seq[Int]]("blah.1") must ===(Seq(1, 2, 3))
+      exampleConfig.get[Seq[Double]]("blah.2") must ===(Seq(1.1, 2.2, 3.3))
+      exampleConfig.get[Seq[Long]]("blah.3") must ===(Seq(1L, 2L, 3L))
+      exampleConfig.get[Seq[String]]("blah.4") must contain(exactly("one", "two", "three"))
     }
 
     "handle invalid and null configuration values" in {
-      exampleConfig.getBooleanSeq("foo.bar1").get must throwA[PlayException]
-      exampleConfig.getBoolean("foo.bar3") must throwA[PlayException]
+      exampleConfig.get[Seq[Boolean]]("foo.bar1") must throwA[com.typesafe.config.ConfigException]
+      exampleConfig.get[Boolean]("foo.bar3") must throwA[com.typesafe.config.ConfigException]
+    }
+
+    "query maps" in {
+      "objects with simple keys" in {
+        val configuration = Configuration(ConfigFactory.parseString(
+          """
+            |foo.bar {
+            |  one = 1
+            |  two = 2
+            |}
+          """.stripMargin))
+
+        configuration.get[Map[String, Int]]("foo.bar") must_== Map("one" -> 1, "two" -> 2)
+      }
+      "objects with complex keys" in {
+        val configuration = Configuration(ConfigFactory.parseString(
+          """
+            |test.files {
+            |  "/public/index.html" = "html"
+            |  "/public/stylesheets/\"foo\".css" = "css"
+            |  "/public/javascripts/\"bar\".js" = "js"
+            |}
+          """.stripMargin))
+        configuration.get[Map[String, String]]("test.files") must_== Map(
+          "/public/index.html" -> "html",
+          """/public/stylesheets/"foo".css""" -> "css",
+          """/public/javascripts/"bar".js""" -> "js"
+        )
+      }
+      "nested objects" in {
+        val configuration = Configuration(ConfigFactory.parseString(
+          """
+            |objects.a {
+            |  "b.c" = { "D.E" = F }
+            |  "d.e" = { "F.G" = H, "I.J" = K }
+            |}
+          """.stripMargin))
+        configuration.get[Map[String, Map[String, String]]]("objects.a") must_== Map(
+          "b.c" -> Map("D.E" -> "F"),
+          "d.e" -> Map("F.G" -> "H", "I.J" -> "K")
+        )
+      }
     }
 
     "throw serializable exceptions" in {
@@ -110,7 +172,7 @@ class ConfigurationSpec extends Specification {
       );
       {
         try {
-          conf.getStringList("item")
+          conf.get[Seq[String]]("item")
         } catch {
           case NonFatal(e) => copyViaSerialize(e)
         }

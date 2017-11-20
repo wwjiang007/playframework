@@ -104,6 +104,7 @@ If you wish to specify a request timeout, you can use [`withRequestTimeout`](api
 ### Submitting form data
 
 To post url-form-encoded data a `Map[String, Seq[String]]` needs to be passed into `post`.
+If the body is empty, you must pass play.api.libs.ws.EmptyBody into the post method.
 
 @[url-encoded](code/ScalaWSSpec.scala)
 
@@ -235,6 +236,10 @@ When making a request from a controller, you can map the response to a `Future[R
 If a chain of WS calls does not complete in time, it may be useful to wrap the result in a timeout block, which will return a failed Future if the chain does not complete in time -- this is more generic than using `withRequestTimeout`, which only applies to a single request.  The best way to do this is with Play's [[non-blocking timeout feature|ScalaAsync]], using [`play.api.libs.concurrent.Futures`](api/scala/play/api/libs/concurrent/Futures.html):
 
 @[ws-futures-timeout](code/ScalaWSSpec.scala)
+
+## Compile Time Dependency Injection
+
+If you are using compile time depedency injection, you can access a `WSClient` instance by using the trait `AhcWSComponents`.
 
 ## Directly creating WSClient
 

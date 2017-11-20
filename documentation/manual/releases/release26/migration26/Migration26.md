@@ -19,7 +19,9 @@ Where the "x" in `2.6.x` is the minor version of Play you want to use, for insta
 
 ### sbt upgrade to 0.13.15
 
-Play 2.6 requires upgrading to the latest sbt version, 0.13.15.  The 0.13.15 release of sbt has a number of [improvements and bug fixes](http://www.scala-sbt.org/0.13/docs/sbt-0.13-Tech-Previews.html#sbt+0.13.15) (see also the changes in [sbt 0.13.13](http://www.scala-sbt.org/0.13/docs/sbt-0.13-Tech-Previews.html#sbt+0.13.13)).
+Play 2.6 requires upgrading to at least sbt 0.13.15. The 0.13.15 release of sbt has a number of [improvements and bug fixes](http://www.scala-sbt.org/0.13/docs/sbt-0.13-Tech-Previews.html#sbt+0.13.15) (see also the changes in [sbt 0.13.13](http://www.scala-sbt.org/0.13/docs/sbt-0.13-Tech-Previews.html#sbt+0.13.13)). 
+
+sbt 1.x is supported beginning with Play 2.6.6. If you are using other sbt plugins, you may need to check if there is a newer version compatible with sbt 1.x
 
 To update, change your `project/build.properties` so that it reads:
 
@@ -516,7 +518,7 @@ import play.api.data.JodaForms._
 If you need Joda support in play-json, you can add the following dependency:
 
 ```scala
-libraryDependencies += "com.typesafe.play" % "play-json-joda" % playJsonVersion
+libraryDependencies += "com.typesafe.play" %% "play-json-joda" % playJsonVersion
 ```
 
 where `playJsonVersion` is the play-json version you wish to use. Play 2.6.x should be compatible with play-json 2.6.x. Note that play-json is now a separate project (described later).
@@ -900,7 +902,7 @@ You may also want to enable SameSite cookies in Play, which provide an additiona
 
 ##### Why it is enabled by default
 
-Browser based attacks are extremely commmon, and security headers can provide a defense in depth to help frustrate those attacks.
+Browser based attacks are extremely common, and security headers can provide a defense in depth to help frustrate those attacks.
 
 ##### What changes do I need to make? 
 

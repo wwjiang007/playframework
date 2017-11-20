@@ -6,13 +6,14 @@ package play.api.cache.ehcache
 import javax.inject.{ Inject, Provider, Singleton }
 
 import akka.Done
+import akka.actor.ActorSystem
 import akka.stream.Materializer
 import com.google.common.primitives.Primitives
 import net.sf.ehcache.{ CacheManager, Ehcache, Element, ObjectExistsException }
 import play.api.cache._
 import play.api.inject._
 import play.api.{ Configuration, Environment }
-import play.cache.{ AsyncCacheApi => JavaAsyncCacheApi, SyncCacheApi => JavaSyncCacheApi, CacheApi => JavaCacheApi, DefaultAsyncCacheApi => JavaDefaultAsyncCacheApi, DefaultSyncCacheApi => JavaDefaultSyncCacheApi, NamedCacheImpl }
+import play.cache.{ NamedCacheImpl, AsyncCacheApi => JavaAsyncCacheApi, CacheApi => JavaCacheApi, DefaultAsyncCacheApi => JavaDefaultAsyncCacheApi, SyncCacheApiAdapter, SyncCacheApi => JavaSyncCacheApi }
 
 import scala.concurrent.duration.{ Duration, FiniteDuration }
 import scala.concurrent.{ ExecutionContext, Future }
@@ -25,6 +26,7 @@ trait EhCacheComponents {
   def environment: Environment
   def configuration: Configuration
   def applicationLifecycle: ApplicationLifecycle
+  def actorSystem: ActorSystem
   implicit def executionContext: ExecutionContext
 
   lazy val ehCacheManager: CacheManager = new CacheManagerProvider(environment, configuration, applicationLifecycle).get
@@ -33,8 +35,10 @@ trait EhCacheComponents {
    * Use this to create with the given name.
    */
   def cacheApi(name: String, create: Boolean = true): AsyncCacheApi = {
-    val createNamedCaches = configuration.underlying.getBoolean("play.cache.createBoundCaches")
-    new EhCacheApi(NamedEhCacheProvider.getNamedCache(name, ehCacheManager, createNamedCaches))
+    val createNamedCaches = configuration.get[Boolean]("play.cache.createBoundCaches")
+    val ec = configuration.get[Option[String]]("play.cache.dispatcher")
+      .fold(executionContext)(actorSystem.dispatchers.lookup(_))
+    new EhCacheApi(NamedEhCacheProvider.getNamedCache(name, ehCacheManager, createNamedCaches))(ec)
   }
 
   lazy val defaultCacheApi: AsyncCacheApi = cacheApi("play")
@@ -119,7 +123,7 @@ private[play] object NamedEhCacheProvider {
     case e: ObjectExistsException =>
       throw new EhCacheExistsException(
         s"""An EhCache instance with name '$name' already exists.
-            |
+           |
            |This usually indicates that multiple instances of a dependent component (e.g. a Play application) have been started at the same time.
          """.stripMargin, e)
   }
@@ -127,15 +131,26 @@ private[play] object NamedEhCacheProvider {
 
 private[play] class NamedAsyncCacheApiProvider(key: BindingKey[Ehcache]) extends Provider[AsyncCacheApi] {
   @Inject private var injector: Injector = _
+  @Inject private var defaultEc: ExecutionContext = _
+  @Inject private var config: Configuration = _
+  @Inject private var actorSystem: ActorSystem = _
+  private lazy val ec: ExecutionContext = config.get[Option[String]]("play.cache.dispatcher").map(actorSystem.dispatchers.lookup(_)).getOrElse(defaultEc)
   lazy val get: AsyncCacheApi =
-    new EhCacheApi(injector.instanceOf(key))(injector.instanceOf[ExecutionContext])
+    new EhCacheApi(injector.instanceOf(key))(ec)
 }
 
 private[play] class NamedSyncCacheApiProvider(key: BindingKey[AsyncCacheApi])
     extends Provider[SyncCacheApi with CacheApi] {
   @Inject private var injector: Injector = _
-  lazy val get: SyncCacheApi with CacheApi =
-    new DefaultSyncCacheApi(injector.instanceOf(key))
+
+  // TODO: remove "with CacheApi" hacks for 2.7.0
+  lazy val get: SyncCacheApi with CacheApi = {
+    val async = injector.instanceOf(key)
+    async.sync match {
+      case sync: SyncCacheApi with CacheApi => sync
+      case _ => new DefaultSyncCacheApi(async)
+    }
+  }
 }
 
 private[play] class NamedJavaAsyncCacheApiProvider(key: BindingKey[AsyncCacheApi]) extends Provider[JavaAsyncCacheApi] {
@@ -148,7 +163,7 @@ private[play] class NamedJavaSyncCacheApiProvider(key: BindingKey[AsyncCacheApi]
     extends Provider[JavaSyncCacheApi with JavaCacheApi] {
   @Inject private var injector: Injector = _
   lazy val get: JavaSyncCacheApi with JavaCacheApi =
-    new JavaDefaultSyncCacheApi(new JavaDefaultAsyncCacheApi(injector.instanceOf(key)))
+    new SyncCacheApiAdapter(injector.instanceOf(key).sync)
 }
 
 private[play] class NamedCachedProvider(key: BindingKey[AsyncCacheApi]) extends Provider[Cached] {
@@ -159,10 +174,9 @@ private[play] class NamedCachedProvider(key: BindingKey[AsyncCacheApi]) extends 
 
 private[play] case class EhCacheExistsException(msg: String, cause: Throwable) extends RuntimeException(msg, cause)
 
-@Singleton
-class EhCacheApi @Inject() (private[ehcache] val cache: Ehcache)(implicit context: ExecutionContext) extends AsyncCacheApi {
+class SyncEhCacheApi @Inject() (private[ehcache] val cache: Ehcache) extends SyncCacheApi with CacheApi {
 
-  def set(key: String, value: Any, expiration: Duration): Future[Done] = {
+  override def set(key: String, value: Any, expiration: Duration): Unit = {
     val element = new Element(key, value)
     expiration match {
       case infinite: Duration.Infinite => element.setEternal(true)
@@ -176,18 +190,52 @@ class EhCacheApi @Inject() (private[ehcache] val cache: Ehcache)(implicit contex
           element.setTimeToLive(seconds.toInt)
         }
     }
-    Future.successful {
-      cache.put(element)
-      Done
+    cache.put(element)
+    Done
+  }
+
+  override def remove(key: String): Unit = cache.remove(key)
+
+  override def getOrElseUpdate[A: ClassTag](key: String, expiration: Duration)(orElse: => A): A = {
+    get[A](key) match {
+      case Some(value) => value
+      case None =>
+        val value = orElse
+        set(key, value, expiration)
+        value
     }
   }
 
-  def get[T](key: String)(implicit ct: ClassTag[T]): Future[Option[T]] = {
-    val result = Option(cache.get(key)).map(_.getObjectValue).filter { v =>
+  override def getOrElse[A: ClassTag](key: String, expiration: Duration)(orElse: => A): A =
+    getOrElseUpdate(key, expiration)(orElse)
+
+  override def get[T](key: String)(implicit ct: ClassTag[T]): Option[T] = {
+    Option(cache.get(key)).map(_.getObjectValue).filter { v =>
       Primitives.wrap(ct.runtimeClass).isInstance(v) ||
         ct == ClassTag.Nothing || (ct == ClassTag.Unit && v == ((): Unit))
     }.asInstanceOf[Option[T]]
-    Future.successful(result)
+  }
+}
+
+/**
+ * Ehcache implementation of [[AsyncCacheApi]]. Since Ehcache is synchronous by default, this uses [[SyncEhCacheApi]].
+ */
+class EhCacheApi @Inject() (private[ehcache] val cache: Ehcache)(implicit context: ExecutionContext) extends AsyncCacheApi {
+
+  override lazy val sync: SyncEhCacheApi = new SyncEhCacheApi(cache)
+
+  def set(key: String, value: Any, expiration: Duration): Future[Done] = Future {
+    sync.set(key, value, expiration)
+    Done
+  }
+
+  def get[T: ClassTag](key: String): Future[Option[T]] = Future {
+    sync.get(key)
+  }
+
+  def remove(key: String): Future[Done] = Future {
+    sync.remove(key)
+    Done
   }
 
   def getOrElseUpdate[A: ClassTag](key: String, expiration: Duration)(orElse: => Future[A]): Future[A] = {
@@ -195,11 +243,6 @@ class EhCacheApi @Inject() (private[ehcache] val cache: Ehcache)(implicit contex
       case Some(value) => Future.successful(value)
       case None => orElse.flatMap(value => set(key, value, expiration).map(_ => value))
     }
-  }
-
-  def remove(key: String): Future[Done] = Future.successful {
-    cache.remove(key)
-    Done
   }
 
   def removeAll(): Future[Done] = Future {

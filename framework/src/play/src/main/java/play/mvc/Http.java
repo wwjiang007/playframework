@@ -903,7 +903,10 @@ public class Http {
         /**
          * Constructor only based on a header.
          * @param header the header from a request
+         *
+         * @deprecated Since 2.7.0. Use {@link #RequestImpl(play.api.mvc.Request)} instead.
          */
+        @Deprecated
         public RequestImpl(play.api.mvc.RequestHeader header) {
             super(header.withBody(null));
         }
@@ -2499,6 +2502,7 @@ public class Http {
         String IF_RANGE = "If-Range";
         String IF_UNMODIFIED_SINCE = "If-Unmodified-Since";
         String LAST_MODIFIED = "Last-Modified";
+        String LINK = "Link";
         String LOCATION = "Location";
         String MAX_FORWARDS = "Max-Forwards";
         String PRAGMA = "Pragma";
@@ -2533,6 +2537,13 @@ public class Http {
         String X_FORWARDED_PORT = "X-Forwarded-Port";
         String X_FORWARDED_PROTO = "X-Forwarded-Proto";
         String X_REQUESTED_WITH = "X-Requested-With";
+        String STRICT_TRANSPORT_SECURITY = "Strict-Transport-Security";
+        String X_FRAME_OPTIONS = "X-Frame-Options";
+        String X_XSS_PROTECTION = "X-XSS-Protection";
+        String X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options";
+        String X_PERMITTED_CROSS_DOMAIN_POLICIES = "X-Permitted-Cross-Domain-Policies";
+        String CONTENT_SECURITY_POLICY = "Content-Security-Policy";
+        String REFERRER_POLICY = "Referrer-Policy";
     }
 
     /**

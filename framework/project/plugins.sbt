@@ -3,20 +3,24 @@
 enablePlugins(BuildInfoPlugin)
 
 val Versions = new {
-  val sbtNativePackager = "1.2.0"
-  val mima = "0.1.14"
+  // when updating sbtNativePackager version, be sure to also update the documentation links in
+  // documentation/manual/working/commonGuide/production/Deploying.md
+  val sbtNativePackager = "1.3.2"
+  val mima = "0.1.18"
   val sbtScalariform = "1.6.0"
-  val sbtJmh = "0.2.24"
+  val sbtJavaAgent = "0.1.4"
+  val sbtJmh = "0.2.27"
   val sbtDoge = "0.1.5"
-  val webjarsLocatorCore = "0.32"
+  val webjarsLocatorCore = "0.33"
   val sbtHeader = "1.8.0"
-  val sbtTwirl: String = sys.props.getOrElse("twirl.version", "1.3.3")
-  val interplay: String = sys.props.getOrElse("interplay.version", "1.3.6")
+  val sbtTwirl: String = sys.props.getOrElse("twirl.version", "1.3.12")
+  val interplay: String = sys.props.getOrElse("interplay.version", "1.3.12")
 }
 
 buildInfoKeys := Seq[BuildInfoKey](
   "sbtNativePackagerVersion" -> Versions.sbtNativePackager,
-  "sbtTwirlVersion" -> Versions.sbtTwirl
+  "sbtTwirlVersion" -> Versions.sbtTwirl,
+  "sbtJavaAgentVersion" -> Versions.sbtJavaAgent
 )
 
 logLevel := Level.Warn
@@ -27,6 +31,7 @@ addSbtPlugin("com.typesafe.play" % "interplay" % Versions.interplay)
 addSbtPlugin("com.typesafe.sbt" % "sbt-twirl" % Versions.sbtTwirl)
 addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % Versions.mima)
 addSbtPlugin("org.scalariform" % "sbt-scalariform" % Versions.sbtScalariform)
+addSbtPlugin("com.lightbend.sbt" % "sbt-javaagent" % Versions.sbtJavaAgent)
 addSbtPlugin("pl.project13.scala" % "sbt-jmh" % Versions.sbtJmh)
 addSbtPlugin("de.heikoseeberger" % "sbt-header" % Versions.sbtHeader)
 

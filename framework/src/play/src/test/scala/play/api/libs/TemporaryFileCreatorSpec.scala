@@ -6,6 +6,7 @@ package play.api.libs
 import java.io.File
 import java.nio.charset.Charset
 import java.nio.file.{ Path, Files => JFiles }
+import java.util.concurrent.{ CountDownLatch, ExecutorService, Executors }
 
 import org.specs2.mock.Mockito
 import org.specs2.mutable.{ After, Specification }
@@ -15,6 +16,9 @@ import play.api._
 import play.api.inject.DefaultApplicationLifecycle
 import play.api.libs.Files._
 import play.api.routing.Router
+
+import scala.concurrent.{ Await, ExecutionContext, Future }
+import scala.concurrent.duration._
 
 class TemporaryFileCreatorSpec extends Specification with Mockito {
 
@@ -39,6 +43,50 @@ class TemporaryFileCreatorSpec extends Specification with Mockito {
 
         parentDirectory.toFile.delete()
       }
+    }
+
+    "not have a race condition when creating temporary files" in {
+
+      // See issue https://github.com/playframework/playframework/issues/7700
+      // We were having problems by creating to many temporary folders and
+      // keeping track of them inside TemporaryFileCreator and between it and
+      // TemporaryFileReaper.
+
+      val threads = 25
+      val threadPool: ExecutorService = Executors.newFixedThreadPool(threads)
+
+      val lifecycle = new DefaultApplicationLifecycle
+      val reaper = mock[TemporaryFileReaper]
+      val creator = new DefaultTemporaryFileCreator(lifecycle, reaper)
+
+      try {
+        val executionContext = ExecutionContext.fromExecutorService(threadPool)
+
+        // Use a latch to stall the threads until they are all ready to go, then
+        // release them all at once. This maximizes the chance of a race condition
+        // being visible.
+        val raceLatch = new CountDownLatch(threads)
+
+        val futureResults: Seq[Future[TemporaryFile]] = for (_ <- 0 until threads) yield {
+          Future {
+            raceLatch.countDown()
+            creator.create("foo", "bar")
+          }(executionContext)
+        }
+
+        val results: Seq[TemporaryFile] = {
+          import ExecutionContext.Implicits.global // implicit for Future.sequence
+          Await.result(Future.sequence(futureResults), 30.seconds)
+        }
+
+        val parentDir = results.head.path.getParent
+
+        // All temporary files should be created at the same directory
+        results.forall(_.path.getParent.equals(parentDir)) must beTrue
+      } finally {
+        threadPool.shutdown()
+      }
+      ok
     }
 
     "recreate directory if it is deleted" in new WithScope() {
@@ -98,7 +146,7 @@ class TemporaryFileCreatorSpec extends Specification with Mockito {
     }
 
     "works when using compile time dependency injection" in {
-      val context = ApplicationLoader.createContext(
+      val context = ApplicationLoader.Context.create(
         new Environment(new File("."), ApplicationLoader.getClass.getClassLoader, Mode.Test))
       val appLoader = new ApplicationLoader {
         def load(context: Context) = {

@@ -53,6 +53,8 @@ There is also a convenient helper to retrieve from cache or set the value in cac
 
 @[retrieve-missing](code/ScalaCache.scala)
 
+**Note**: `getOrElseUpdate` is not an atomic operation in Ehcache and is implemented as a `get` followed by computing the value, then a `set`. This means it's possible for the value to be computed multiple times if multiple threads are calling `getOrElse` simultaneously.
+
 You can specify an expiry duration by passing a duration, by default the duration is infinite:
 
 @[set-value-expiration](code/ScalaCache.scala)
@@ -84,6 +86,25 @@ By default, Play will try to create these caches for you. If you would like to d
 Now to access these different caches, when you inject them, use the [NamedCache](api/java/play/cache/NamedCache.html) qualifier on your dependency, for example:
 
 @[qualified](code/ScalaCache.scala)
+
+## Setting the execution context
+
+By default, all Ehcache operations are blocking, and async implementations will block threads in the default execution context.
+Usually this is okay if you are using Play's default configuration, which only stores elements in memory since reads should be relatively fast.
+However, depending on how EhCache was configured and [where the data is stored](http://www.ehcache.org/generated/2.10.4/html/ehc-all/#page/Ehcache_Documentation_Set%2Fco-store_storage_tiers.html), this blocking I/O might be too costly.
+For such a case you can configure a different [Akka dispatcher](http://doc.akka.io/docs/akka/current/scala/dispatchers.html#looking-up-a-dispatcher) and set it via `play.cache.dispatcher` so the EhCache plugin makes use of it:
+
+```
+play.cache.dispatcher = "contexts.blockingCacheDispatcher"
+
+contexts {
+  blockingCacheDispatcher {
+    fork-join-executor {
+      parallelism-factor = 3.0
+    }
+  }
+}
+```
 
 ## Caching HTTP responses
 

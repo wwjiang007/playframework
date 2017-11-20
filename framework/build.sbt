@@ -4,12 +4,15 @@
 import BuildSettings._
 import Dependencies._
 import Generators._
-import com.typesafe.tools.mima.plugin.MimaKeys.{ mimaPreviousArtifacts, mimaReportBinaryIssues, mimaBinaryIssueFilters }
-import com.typesafe.tools.mima.core._
+import com.typesafe.tools.mima.plugin.MimaKeys.{mimaPreviousArtifacts, mimaReportBinaryIssues}
 import interplay.PlayBuildBase.autoImport._
 import sbt.Keys.parallelExecution
+import com.lightbend.sbt.javaagent.JavaAgent.JavaAgentKeys.{javaAgents, resolvedJavaAgents}
+import com.lightbend.sbt.javaagent.JavaAgent.ResolvedAgent
+import pl.project13.scala.sbt.JmhPlugin.generateJmhSourcesAndResources
 import sbt.ScriptedPlugin._
 import sbt._
+import sbt.complete.Parser
 
 lazy val BuildLinkProject = PlayNonCrossBuiltProject("Build-Link", "build-link")
     .dependsOn(PlayExceptionsProject)
@@ -18,7 +21,7 @@ lazy val BuildLinkProject = PlayNonCrossBuiltProject("Build-Link", "build-link")
 lazy val RunSupportProject = PlaySbtProject("Run-Support", "run-support")
     .settings(
       target := target.value / "run-support",
-      libraryDependencies ++= runSupportDependencies
+      libraryDependencies ++= runSupportDependencies((sbtVersion in pluginCrossBuild).value)
     ).dependsOn(BuildLinkProject)
 
 lazy val RoutesCompilerProject = PlayDevelopmentProject("Routes-Compiler", "routes-compiler")
@@ -41,12 +44,6 @@ lazy val StreamsProject = PlayCrossBuiltProject("Play-Streams", "play-streams")
 
 lazy val PlayExceptionsProject = PlayNonCrossBuiltProject("Play-Exceptions", "play-exceptions")
 
-lazy val PlayNettyUtilsProject = PlayNonCrossBuiltProject("Play-Netty-Utils", "play-netty-utils")
-    .settings(
-      javacOptions in(Compile, doc) += "-Xdoclint:none",
-      libraryDependencies ++= nettyUtilsDependencies
-    )
-
 lazy val PlayJodaFormsProject = PlayCrossBuiltProject("Play-Joda-Forms", "play-joda-forms")
     .settings(
       libraryDependencies ++= joda
@@ -56,9 +53,14 @@ lazy val PlayJodaFormsProject = PlayCrossBuiltProject("Play-Joda-Forms", "play-j
 lazy val PlayProject = PlayCrossBuiltProject("Play", "play")
     .enablePlugins(SbtTwirl)
     .settings(
-      libraryDependencies ++= runtime(scalaVersion.value) ++ scalacheckDependencies,
+      libraryDependencies ++= runtime(scalaVersion.value) ++ scalacheckDependencies ++ cookieEncodingDependencies,
 
-      sourceGenerators in Compile += Def.task(PlayVersion(version.value, scalaVersion.value, sbtVersion.value, (sourceManaged in Compile).value)).taskValue,
+      sourceGenerators in Compile += Def.task(PlayVersion(
+        version.value,
+        scalaVersion.value,
+        sbtVersion.value,
+        jettyAlpnAgent.revision,
+        (sourceManaged in Compile).value)).taskValue,
 
       sourceDirectories in(Compile, TwirlKeys.compileTemplates) := (unmanagedSourceDirectories in Compile).value,
       TwirlKeys.templateImports += "play.api.templates.PlayMagic._",
@@ -79,7 +81,6 @@ lazy val PlayProject = PlayCrossBuiltProject("Play", "play")
     ).settings(Docs.playdocSettings: _*)
     .dependsOn(
       BuildLinkProject,
-      PlayNettyUtilsProject,
       StreamsProject
     )
 
@@ -175,8 +176,13 @@ lazy val PlayGuiceProject = PlayCrossBuiltProject("Play-Guice", "play-guice")
 
 lazy val SbtPluginProject = PlaySbtPluginProject("SBT-Plugin", "sbt-plugin")
     .settings(
-      libraryDependencies ++= sbtDependencies(sbtVersion.value, scalaVersion.value),
-      sourceGenerators in Compile += Def.task(PlayVersion(version.value, (scalaVersion in PlayProject).value, sbtVersion.value, (sourceManaged in Compile).value)).taskValue,
+      libraryDependencies ++= sbtDependencies((sbtVersion in pluginCrossBuild).value, scalaVersion.value),
+      sourceGenerators in Compile += Def.task(PlayVersion(
+        version.value,
+        (scalaVersion in PlayProject).value,
+        sbtVersion.value,
+        jettyAlpnAgent.revision,
+        (sourceManaged in Compile).value)).taskValue,
 
       // This only publishes the sbt plugin projects on each scripted run.
       // The runtests script does a full publish before running tests.
@@ -232,10 +238,13 @@ lazy val PlayFiltersHelpersProject = PlayCrossBuiltProject("Filters-Helpers", "p
 
 // This project is just for testing Play, not really a public artifact
 lazy val PlayIntegrationTestProject = PlayCrossBuiltProject("Play-Integration-Test", "play-integration-test")
+    .enablePlugins(JavaAgent)
     .settings(
-      libraryDependencies += h2database % Test,
+      libraryDependencies += okHttp % Test,
       parallelExecution in Test := false,
-      mimaPreviousArtifacts := Set.empty
+      mimaPreviousArtifacts := Set.empty,
+      fork in Test := true,
+      javaAgents += jettyAlpnAgent % "test"
     )
     .dependsOn(
       PlayProject % "test->test",
@@ -248,19 +257,52 @@ lazy val PlayIntegrationTestProject = PlayCrossBuiltProject("Play-Integration-Te
     .dependsOn(PlayJavaProject)
     .dependsOn(PlayJavaFormsProject)
     .dependsOn(PlayAkkaHttpServerProject)
+    .dependsOn(PlayAkkaHttp2SupportProject)
     .dependsOn(PlayNettyServerProject)
 
-// This project is just for microbenchmarking Play, not really a public artifact
+// This project is just for microbenchmarking Play. Not published.
+// NOTE: this project depends on JMH, which is GPLv2.
 lazy val PlayMicrobenchmarkProject = PlayCrossBuiltProject("Play-Microbenchmark", "play-microbenchmark")
-    .enablePlugins(JmhPlugin)
+    .enablePlugins(JmhPlugin, JavaAgent)
     .settings(
+      // Change settings so that IntelliJ can handle dependencies
+      // from JMH to the integration tests. We can't use "compile->test"
+      // when we depend on the integration test project, we have to use
+      // "test->test" so that IntelliJ can handle it. This means that
+      // we need to put our JMH sources into src/test so they can pick
+      // up the integration test files.
+      // See: https://github.com/ktoso/sbt-jmh/pull/73#issue-163891528
+
+      classDirectory in Jmh := (classDirectory in Test).value,
+      dependencyClasspath in Jmh := (dependencyClasspath in Test).value,
+      generateJmhSourcesAndResources in Jmh := ((generateJmhSourcesAndResources in Jmh) dependsOn(compile in Test)).value,
+
+      // Add the Jetty ALPN agent to the list of agents. This will cause the JAR to
+      // be downloaded and available. We need to tell JMH to use this agent when it
+      // forks its benchmark processes. We use a custom runner to read a system
+      // property and add the agent JAR to JMH's forked process JVM arguments.
+      javaAgents += jettyAlpnAgent,
+      javaOptions in (Jmh, run) += {
+        val javaAgents = (resolvedJavaAgents in Jmh).value
+        assert(javaAgents.length == 1)
+        val jettyAgentPath = javaAgents.head.artifact.absString
+        s"-Djetty.anlp.agent.jar=$jettyAgentPath"
+      },
+      mainClass in (Jmh, run) := Some("play.microbenchmark.PlayJmhRunner"),
+
       parallelExecution in Test := false,
       mimaPreviousArtifacts := Set.empty
     )
-    .dependsOn(PlayProject % "test->test", PlayLogback % "test->test", PlayAhcWsProject, PlaySpecs2Project)
-    .dependsOn(PlayFiltersHelpersProject)
-    .dependsOn(PlayJavaProject)
-    .dependsOn(PlayNettyServerProject)
+    .dependsOn(
+      PlayProject % "test->test",
+      PlayLogback % "test->test",
+      PlayIntegrationTestProject % "test->test",
+      PlayAhcWsProject,
+      PlaySpecs2Project,
+      PlayFiltersHelpersProject,
+      PlayJavaProject,
+      PlayNettyServerProject
+    )
 
 lazy val PlayCacheProject = PlayCrossBuiltProject("Play-Cache", "play-cache")
     .settings(
@@ -317,7 +359,6 @@ lazy val publishedProjects = Seq[ProjectReference](
   PlayJodaFormsProject,
   PlayJavaJdbcProject,
   PlayJpaProject,
-  PlayNettyUtilsProject,
   PlayNettyServerProject,
   PlayServerProject,
   PlayLogback,
@@ -332,7 +373,6 @@ lazy val publishedProjects = Seq[ProjectReference](
   PlayDocsProject,
   PlayFiltersHelpersProject,
   PlayIntegrationTestProject,
-  PlayMicrobenchmarkProject,
   PlayDocsSbtPlugin,
   StreamsProject
 )

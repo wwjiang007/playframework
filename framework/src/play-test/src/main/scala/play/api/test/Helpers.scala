@@ -4,6 +4,7 @@
 package play.api.test
 
 import java.nio.file.Path
+import java.util.concurrent.locks.{ Lock, ReentrantLock }
 
 import akka.actor.Cancellable
 import akka.stream.scaladsl.Source
@@ -45,10 +46,12 @@ trait PlayRunners extends HttpVerbs {
   protected def shouldRunSequentially(app: Application): Boolean = app.globalApplicationEnabled
 
   private[play] def runSynchronized[T](app: Application)(block: => T): T = {
-    if (shouldRunSequentially(app)) {
-      PlayRunners.mutex.synchronized(block)
-    } else {
+    val needsLock = shouldRunSequentially(app)
+    if (needsLock) { PlayRunners.mutex.lock() }
+    try {
       block
+    } finally {
+      if (needsLock) { PlayRunners.mutex.unlock() }
     }
   }
 
@@ -125,7 +128,7 @@ trait PlayRunners extends HttpVerbs {
    * The port to use for a test server. Defaults to 19001. May be configured using the system property
    * testserver.port
    */
-  lazy val testServerPort = Option(System.getProperty("testserver.port")).map(_.toInt).getOrElse(19001)
+  lazy val testServerPort: Int = sys.props.get("testserver.port").map(_.toInt).getOrElse(19001)
 
   /**
    * Constructs a in-memory (h2) database configuration to add to an Application.
@@ -145,7 +148,7 @@ object PlayRunners {
   /**
    * This mutex is used to ensure that no two tests that set the global application can run at the same time.
    */
-  private[play] val mutex: AnyRef = new AnyRef()
+  private[play] val mutex: Lock = new ReentrantLock()
 }
 
 trait Writeables {

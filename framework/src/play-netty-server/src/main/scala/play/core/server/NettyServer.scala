@@ -3,14 +3,13 @@
  */
 package play.core.server
 
-import java.io.IOException
 import java.net.InetSocketAddress
 
 import akka.Done
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import akka.stream.scaladsl.{ Sink, Source }
-import com.typesafe.config.{ Config, ConfigFactory, ConfigValue }
+import com.typesafe.config.{ Config, ConfigValue }
 import com.typesafe.netty.HandlerPublisher
 import com.typesafe.netty.http.HttpStreamsServerHandler
 import io.netty.bootstrap.Bootstrap
@@ -24,8 +23,6 @@ import io.netty.handler.logging.{ LogLevel, LoggingHandler }
 import io.netty.handler.ssl.SslHandler
 import io.netty.handler.timeout.IdleStateHandler
 import play.api._
-import play.api.inject.{ ApplicationLifecycle, DefaultApplicationLifecycle }
-import play.api.mvc.{ Handler, RequestHeader }
 import play.api.routing.Router
 import play.core._
 import play.core.server.netty._
@@ -65,7 +62,7 @@ class NettyServer(
 
   import NettyServer._
 
-  def mode = config.mode
+  override def mode: Mode = config.mode
 
   /**
    * The event loop
@@ -182,13 +179,9 @@ class NettyServer(
         pipeline.addLast("logging", new LoggingHandler(LogLevel.DEBUG))
       }
 
-      val idleTimeout = if (secure) {
-        serverConfig.get[Duration]("https.idleTimeout")
-      } else {
-        serverConfig.get[Duration]("http.idleTimeout")
-      }
+      val idleTimeout = serverConfig.get[Duration](if (secure) "https.idleTimeout" else "http.idleTimeout")
       idleTimeout match {
-        case Duration.Inf => // Do nothing
+        case Duration.Inf => // Do nothing, in other words, don't set any timeout.
         case Duration(timeout, timeUnit) =>
           logger.trace(s"using idle timeout of $timeout $timeUnit on port $port")
           // only timeout if both reader and writer have been idle for the specified time
@@ -206,17 +199,6 @@ class NettyServer(
       val childChannelEventLoop = eventLoop.next()
       childChannelEventLoop.register(connChannel)
       allChannels.add(connChannel)
-    }
-  }
-
-  private def handleSubscriberError(error: Throwable): Unit = {
-    error match {
-      // IO exceptions happen all the time, it usually just means that the client has closed the connection before fully
-      // sending/receiving the response.
-      case e: IOException =>
-        logger.trace("Benign IO exception caught in Netty", e)
-      case e =>
-        logger.error("Exception caught in Netty", e)
     }
   }
 
@@ -271,13 +253,13 @@ class NettyServer(
     Await.result(stopHook(), Duration.Inf)
   }
 
-  override lazy val mainAddress = {
+  override lazy val mainAddress: InetSocketAddress = {
     (httpChannel orElse httpsChannel).get.localAddress().asInstanceOf[InetSocketAddress]
   }
 
-  def httpPort = httpChannel map (_.localAddress().asInstanceOf[InetSocketAddress].getPort)
+  override def httpPort: Option[Int] = httpChannel map (_.localAddress().asInstanceOf[InetSocketAddress].getPort)
 
-  def httpsPort = httpsChannel map (_.localAddress().asInstanceOf[InetSocketAddress].getPort)
+  override def httpsPort: Option[Int] = httpsChannel map (_.localAddress().asInstanceOf[InetSocketAddress].getPort)
 }
 
 /**
@@ -295,9 +277,33 @@ class NettyServerProvider extends ServerProvider {
 }
 
 /**
- * Bootstraps Play application with a NettyServer backend.
+ * Create a Netty server from the given router and server config:
+ *
+ * {{{
+ *   val server = Netty.fromRouter(ServerConfig(port = Some(9002))) {
+ *     case GET(p"/") => Action {
+ *       Results.Ok("Hello")
+ *     }
+ *   }
+ * }}}
+ *
+ * Or from a given router using [[BuiltInComponents]]:
+ *
+ * {{{
+ *   val server = NettyServer.fromRouterWithComponents(ServerConfig(port = Some(9002))) { components =>
+ *     import play.api.mvc.Results._
+ *     import components.{ defaultActionBuilder => Action }
+ *     {
+ *       case GET(p"/") => Action {
+ *         Ok("Hello")
+ *       }
+ *     }
+ *   }
+ * }}}
+ *
+ * Use this together with <a href="https://www.playframework.com/documentation/latest/ScalaSirdRouter">Sird Router</a>.
  */
-object NettyServer {
+object NettyServer extends ServerFromRouter {
 
   private val logger = Logger(this.getClass)
 
@@ -320,13 +326,10 @@ object NettyServer {
       application.materializer)
   }
 
-  /**
-   * Create a Netty server from the given router and server config.
-   */
-  def fromRouter(config: ServerConfig = ServerConfig())(routes: PartialFunction[RequestHeader, Handler]): NettyServer = {
+  override protected def createServerFromRouter(serverConf: ServerConfig)(routes: ServerComponents with BuiltInComponents => Router): Server = {
     new NettyServerComponents with BuiltInComponents with NoHttpFiltersComponents {
-      override lazy val serverConfig = config
-      lazy val router = Router.from(routes)
+      override lazy val serverConfig: ServerConfig = serverConf
+      override def router: Router = routes(this)
     }.server
   }
 }
@@ -334,8 +337,7 @@ object NettyServer {
 /**
  * Cake for building a simple Netty server.
  */
-trait NettyServerComponents {
-  lazy val serverConfig: ServerConfig = ServerConfig()
+trait NettyServerComponents extends ServerComponents {
   lazy val server: NettyServer = {
     // Start the application first
     Play.start(application)
@@ -343,16 +345,5 @@ trait NettyServerComponents {
       application.materializer)
   }
 
-  lazy val environment: Environment = Environment.simple(mode = serverConfig.mode)
-  lazy val sourceMapper: Option[SourceMapper] = None
-  lazy val webCommands: WebCommands = new DefaultWebCommands
-  lazy val configuration: Configuration = Configuration(ConfigFactory.load())
-  lazy val applicationLifecycle: ApplicationLifecycle = new DefaultApplicationLifecycle
-
   def application: Application
-
-  /**
-   * Called when Server.stop is called.
-   */
-  def serverStopHook: () => Future[Unit] = () => Future.successful(())
 }

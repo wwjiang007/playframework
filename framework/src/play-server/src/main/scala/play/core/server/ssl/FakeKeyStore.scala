@@ -11,7 +11,6 @@ import java.math.BigInteger
 import java.security.cert.X509Certificate
 import java.io.File
 import javax.net.ssl.KeyManagerFactory
-import scala.util.Properties.isJavaAtLeast
 import play.utils.PlayIO
 import java.security.interfaces.RSAPublicKey
 
@@ -51,43 +50,60 @@ object FakeKeyStore {
   }
 
   def keyManagerFactory(appPath: File): KeyManagerFactory = {
-    val keyStore = KeyStore.getInstance("JKS")
     val keyStoreFile = new File(appPath, GeneratedKeyStore)
-    if (shouldGenerate(keyStoreFile)) {
-
+    val keyStore: KeyStore = if (shouldGenerate(keyStoreFile)) {
       logger.info("Generating HTTPS key pair in " + keyStoreFile.getAbsolutePath + " - this may take some time. If nothing happens, try moving the mouse/typing on the keyboard to generate some entropy.")
 
-      // Generate the key pair
-      val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
-      keyPairGenerator.initialize(2048) // 2048 is the NIST acceptable key length until 2030
-      val keyPair = keyPairGenerator.generateKeyPair()
-
-      // Generate a self signed certificate
-      val cert = createSelfSignedCertificate(keyPair)
-
-      // Create the key store, first set the store pass
-      keyStore.load(null, "".toCharArray)
-      keyStore.setKeyEntry("playgenerated", keyPair.getPrivate, "".toCharArray, Array(cert))
-      keyStore.setCertificateEntry("playgeneratedtrusted", cert)
+      val freshKeyStore: KeyStore = generateKeyStore
       val out = java.nio.file.Files.newOutputStream(keyStoreFile.toPath)
       try {
-        keyStore.store(out, "".toCharArray)
+        freshKeyStore.store(out, "".toCharArray)
       } finally {
         PlayIO.closeQuietly(out)
       }
+      freshKeyStore
     } else {
+      // Load a KeyStore from a file
+      val loadedKeystore: KeyStore = KeyStore.getInstance("JKS")
       val in = java.nio.file.Files.newInputStream(keyStoreFile.toPath)
       try {
-        keyStore.load(in, "".toCharArray)
+        loadedKeystore.load(in, "".toCharArray)
       } finally {
         PlayIO.closeQuietly(in)
       }
+      loadedKeystore
     }
 
     // Load the key and certificate into a key manager factory
     val kmf = KeyManagerFactory.getInstance("SunX509")
     kmf.init(keyStore, "".toCharArray)
     kmf
+  }
+
+  /**
+   * Generate a fresh KeyStore object in memory. This KeyStore
+   * is not saved to disk. If you want that, then call `keyManagerFactory`.
+   *
+   * This method has has `private[play]` access so it can be used for
+   * testing.
+   */
+  private[play] def generateKeyStore: KeyStore = {
+    // Create a new KeyStore
+    val keyStore: KeyStore = KeyStore.getInstance("JKS")
+
+    // Generate the key pair
+    val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
+    keyPairGenerator.initialize(2048) // 2048 is the NIST acceptable key length until 2030
+    val keyPair = keyPairGenerator.generateKeyPair()
+
+    // Generate a self signed certificate
+    val cert: X509Certificate = createSelfSignedCertificate(keyPair)
+
+    // Create the key store, first set the store pass
+    keyStore.load(null, "".toCharArray)
+    keyStore.setKeyEntry("playgenerated", keyPair.getPrivate, "".toCharArray, Array(cert))
+    keyStore.setCertificateEntry("playgeneratedtrusted", cert)
+    keyStore
   }
 
   def createSelfSignedCertificate(keyPair: KeyPair): X509Certificate = {
@@ -104,12 +120,9 @@ object FakeKeyStore {
     certInfo.set(X509CertInfo.VALIDITY, validity)
 
     // Subject and issuer
-    // Note: CertificateSubjectName and CertificateIssuerName are removed in Java 8
-    // and when setting the subject or issuer just the X500Name should be used.
     val owner = new X500Name(DnName)
-    val justName = isJavaAtLeast("1.8")
-    certInfo.set(X509CertInfo.SUBJECT, if (justName) owner else new CertificateSubjectName(owner))
-    certInfo.set(X509CertInfo.ISSUER, if (justName) owner else new CertificateIssuerName(owner))
+    certInfo.set(X509CertInfo.SUBJECT, owner)
+    certInfo.set(X509CertInfo.ISSUER, owner)
 
     // Key and algorithm
     certInfo.set(X509CertInfo.KEY, new CertificateX509Key(keyPair.getPublic))

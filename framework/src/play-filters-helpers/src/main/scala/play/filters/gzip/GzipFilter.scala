@@ -10,8 +10,8 @@ import akka.stream.scaladsl._
 import akka.stream.{ FlowShape, Materializer, OverflowStrategy }
 import akka.util.ByteString
 import com.typesafe.config.ConfigMemorySize
-import play.api.Configuration
-import play.api.http.{ HttpChunk, HttpEntity, MediaRange, MediaType, Status }
+import play.api.{ Configuration, Logger }
+import play.api.http._
 import play.api.inject._
 import play.api.libs.streams.GzipFlow
 import play.api.mvc.RequestHeader.acceptHeader
@@ -62,7 +62,7 @@ class GzipFilter @Inject() (config: GzipFilterConfig)(implicit mat: Materializer
     implicit val ec = mat.executionContext
     if (shouldCompress(result) && config.shouldGzip(request, result)) {
 
-      val header = result.header.copy(headers = setupHeader(result.header.headers))
+      val header = result.header.copy(headers = setupHeader(result.header))
 
       result.body match {
 
@@ -75,6 +75,14 @@ class GzipFilter @Inject() (config: GzipFilterConfig)(implicit mat: Materializer
           // It's below the chunked threshold, so buffer then compress and send
           compressStrictEntity(entity.data, contentType).map(strictEntity =>
             result.copy(header = header, body = strictEntity)
+          )
+
+        case HttpEntity.Streamed(data, _, contentType) if request.version == HttpProtocol.HTTP_1_0 =>
+          // It's above the chunked threshold, but we can't chunk it because we're using HTTP 1.0.
+          // Instead, we use a close delimited body (ie, regular body with no content length)
+          val gzipped = data via GzipFlow.gzip(config.bufferSize)
+          Future.successful(
+            result.copy(header = header, body = HttpEntity.Streamed(gzipped, None, contentType))
           )
 
         case HttpEntity.Streamed(data, _, contentType) =>
@@ -158,19 +166,8 @@ class GzipFilter @Inject() (config: GzipFilterConfig)(implicit mat: Materializer
    */
   private def isNotAlreadyCompressed(header: ResponseHeader) = header.headers.get(CONTENT_ENCODING).isEmpty
 
-  private def setupHeader(header: Map[String, String]): Map[String, String] = {
-    header + (CONTENT_ENCODING -> "gzip") + addToVaryHeader(header, VARY, ACCEPT_ENCODING)
-  }
-
-  /**
-   * There may be an existing Vary value, which we must add to (comma separated)
-   */
-  private def addToVaryHeader(existingHeaders: Map[String, String], headerName: String, headerValue: String): (String, String) = {
-    existingHeaders.get(headerName) match {
-      case None => (headerName, headerValue)
-      case Some(existing) if existing.split(",").exists(_.trim.equalsIgnoreCase(headerValue)) => (headerName, existing)
-      case Some(existing) => (headerName, s"$existing,$headerValue")
-    }
+  private def setupHeader(rh: ResponseHeader): Map[String, String] = {
+    rh.headers + (CONTENT_ENCODING -> "gzip") + rh.varyWith(ACCEPT_ENCODING)
   }
 }
 
@@ -202,26 +199,75 @@ case class GzipFilterConfig(
 
 object GzipFilterConfig {
 
-  def fromConfiguration(conf: Configuration) = {
+  private val logger = Logger(this.getClass)
+
+  def fromConfiguration(conf: Configuration): GzipFilterConfig = {
+
+    def parseConfigMediaTypes(config: Configuration, key: String): Seq[MediaType] = {
+
+      val mediaTypes = config.get[Seq[String]](key).flatMap {
+
+        case "*" =>
+          // "*" wildcards are accepted for backwards compatibility with when "MediaRange" was used for parsing,
+          // but they are not part of the MediaType spec as defined in RFC2616.
+          logger.warn("Support for '*' wildcards may be removed in future versions of play," +
+            " as they don't conform to the specification for MediaType strings. Use */* instead.")
+          Some(MediaType("*", "*", Seq.empty))
+
+        case MediaType.parse(mediaType) => Some(mediaType)
+
+        case invalid =>
+          logger.error(s"Failed to parse the configured MediaType mask '$invalid'")
+          None
+      }
+
+      mediaTypes.foreach {
+        case MediaType("*", "*", _) =>
+          logger.warn("Wildcard MediaTypes don't make much sense in a whitelist (too permissive) or " +
+            "blacklist (too restrictive), and are not recommended. ")
+        case _ => () // the configured MediaType mask is valid
+      }
+
+      mediaTypes
+    }
+
+    def matches(outgoing: MediaType, mask: MediaType): Boolean = {
+
+      def capturedByMask(value: String, mask: String): Boolean = {
+        mask == "*" || value.equalsIgnoreCase(mask)
+      }
+
+      capturedByMask(outgoing.mediaType, mask.mediaType) && capturedByMask(outgoing.mediaSubType, mask.mediaSubType)
+    }
+
     val config = conf.get[Configuration]("play.filters.gzip")
-    val whiteList = MediaRange.parse(config.get[Seq[String]]("contentType.whiteList").mkString(", ").toLowerCase)
-    val blackList = MediaRange.parse(config.get[Seq[String]]("contentType.blackList").mkString(", ").toLowerCase)
+    val whiteList = parseConfigMediaTypes(config, "contentType.whiteList")
+    val blackList = parseConfigMediaTypes(config, "contentType.blackList")
 
     GzipFilterConfig(
       bufferSize = config.get[ConfigMemorySize]("bufferSize").toBytes.toInt,
       chunkedThreshold = config.get[ConfigMemorySize]("chunkedThreshold").toBytes.toInt,
-      shouldGzip = (req, res) => {
-      res.body.contentType match {
-        case Some(MediaType.parse(mt)) =>
-          val mimeType = s"${mt.mediaType}/${mt.mediaSubType}".toLowerCase
-          if (whiteList.nonEmpty) {
-            whiteList.exists(_.accepts(mimeType))
-          } else {
-            blackList.forall(!_.accepts(mimeType))
+      shouldGzip = (_, res) =>
+
+      if (whiteList.isEmpty) {
+
+        if (blackList.isEmpty) {
+          true // default case, both whitelist and blacklist are empty so we gzip it.
+        } else {
+          // The blacklist is defined, so we gzip the result if it's not blacklisted.
+          res.body.contentType match {
+            case Some(MediaType.parse(outgoing)) => blackList.forall(mask => !matches(outgoing, mask))
+            case _ => true // Fail open (to gziping), since blacklists have a tendency to fail open.
           }
-        case _ => whiteList.isEmpty
+        }
+      } else {
+        // The whitelist is defined. We gzip the result IFF there is a matching whitelist entry.
+        res.body.contentType match {
+          case Some(MediaType.parse(outgoing)) => whiteList.exists(mask => matches(outgoing, mask))
+          case _ => false // Fail closed (to not gziping), since whitelists are intentionally strict.
+        }
       }
-    })
+    )
   }
 }
 

@@ -8,7 +8,6 @@ import java.lang.ref.Reference
 import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.{ Files => JFiles, _ }
 import java.time.{ Clock, Instant }
-import java.util.concurrent.atomic.AtomicReference
 import java.util.function.Predicate
 import javax.inject.{ Inject, Provider, Singleton }
 
@@ -19,7 +18,6 @@ import org.slf4j.LoggerFactory
 import play.api.Configuration
 import play.api.inject.ApplicationLifecycle
 
-import scala.annotation.tailrec
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.implicitConversions
@@ -149,38 +147,24 @@ object Files {
     private val logger = play.api.Logger(this.getClass)
     private val frq = new FinalizableReferenceQueue()
 
-    private val TempDirectoryPrefix = "playtemp"
-
     // Much of the PhantomReference implementation is taken from
     // the Google Guava documentation example
     //
     // https://google.github.io/guava/releases/19.0/api/docs/com/google/common/base/FinalizableReferenceQueue.html
     // Keeping references ensures that the FinalizablePhantomReference itself is not garbage-collected.
     private val references = Sets.newConcurrentHashSet[Reference[TemporaryFile]]()
-    private val _playTempFolder: AtomicReference[Option[Path]] = new AtomicReference(None)
+
+    private val TempDirectoryPrefix = "playtemp"
+    private val playTempFolder: Path = {
+      val tmpFolder = JFiles.createTempDirectory(TempDirectoryPrefix)
+      temporaryFileReaper.updateTempFolder(tmpFolder)
+      tmpFolder
+    }
 
     override def create(prefix: String, suffix: String): TemporaryFile = {
       JFiles.createDirectories(playTempFolder)
       val tempFile = JFiles.createTempFile(playTempFolder, prefix, suffix)
       createReference(new DefaultTemporaryFile(tempFile, this))
-    }
-
-    @tailrec private def playTempFolder: Path = {
-      val lastValue = _playTempFolder.get
-      val newFolder = lastValue match {
-        // We may need to recreate the file if it was deleted (e.g. by tmpwatch)
-        case Some(folder) if JFiles.exists(folder) =>
-          folder
-        case _ =>
-          JFiles.createTempDirectory(TempDirectoryPrefix)
-      }
-      if (_playTempFolder.compareAndSet(lastValue, Some(newFolder))) {
-        temporaryFileReaper.updateTempFolder(newFolder)
-        newFolder
-      } else {
-        JFiles.deleteIfExists(newFolder)
-        playTempFolder
-      }
     }
 
     override def create(path: Path): TemporaryFile = {
@@ -192,7 +176,7 @@ object Files {
         override def finalizeReferent(): Unit = {
           references.remove(this)
           val path = tempFile.path
-          delete(tempFile)
+          deletePath(path)
         }
       }
       references.add(reference)
@@ -228,7 +212,7 @@ object Files {
     applicationLifecycle.addStopHook { () =>
       Future.successful(JFiles.walkFileTree(playTempFolder, new SimpleFileVisitor[Path] {
         override def visitFile(path: Path, attrs: BasicFileAttributes): FileVisitResult = {
-          logger.debug(s"stopHook: Removing leftover temporary file $path from $playTempFolder")
+          logger.debug(s"stopHook: Removing leftover temporary file $path from ${playTempFolder}")
           deletePath(path)
           FileVisitResult.CONTINUE
         }
@@ -275,18 +259,22 @@ object Files {
         playTempFolder.map { f =>
           import scala.compat.java8.StreamConverters._
 
-          val reaped = JFiles.list(f)
-            .filter(new Predicate[Path]() {
+          val directoryStream = JFiles.list(f)
+
+          try {
+            val reaped = directoryStream.filter(new Predicate[Path]() {
               override def test(p: Path): Boolean = {
                 val lastModifiedTime = JFiles.getLastModifiedTime(p).toInstant
                 lastModifiedTime.isBefore(secondsAgo)
               }
             }).toScala[List]
 
-          reaped.foreach { p =>
-            delete(p)
+            reaped.foreach(delete)
+            reaped
+          } finally {
+            directoryStream.close()
           }
-          reaped
+
         }.getOrElse(Seq.empty)
       }(blockingExecutionContext)
     }
@@ -305,7 +293,12 @@ object Files {
 
     if (config.enabled) {
       import config._
-      logger.info(s"Reaper enabled on $playTempFolder, starting in $initialDelay with $interval intervals")
+      playTempFolder match {
+        case Some(folder) =>
+          logger.debug(s"Reaper enabled on $folder, starting in $initialDelay with $interval intervals")
+        case None =>
+          logger.debug(s"Reaper enabled but no temp folder has been created yet, starting in $initialDelay with $interval intervals")
+      }
       cancellable = Some(actorSystem.scheduler.schedule(initialDelay, interval){
         reap()
       }(actorSystem.dispatcher))

@@ -154,6 +154,8 @@ object Cookies extends CookieHeaderEncoding {
  */
 trait CookieHeaderEncoding {
 
+  import play.core.cookie.encoding.DefaultCookie
+
   private implicit val markerContext = SecurityMarkerContext
 
   protected def config: CookiesConfiguration
@@ -170,7 +172,6 @@ trait CookieHeaderEncoding {
   import scala.collection.JavaConverters._
 
   // We use netty here but just as an API to handle cookies encoding
-  import play.core.netty.utils.DefaultCookie
 
   private val logger = Logger(this.getClass)
 
@@ -500,12 +501,25 @@ trait UrlEncodedCookieDataCodec extends CookieDataCodec {
    */
   def decode(data: String): Map[String, String] = {
 
-    def urldecode(data: String) = {
-      data
-        .split("&")
-        .map(_.split("=", 2))
-        .map(p => URLDecoder.decode(p(0), "UTF-8") -> URLDecoder.decode(p(1), "UTF-8"))
-        .toMap
+    def urldecode(data: String): Map[String, String] = {
+      // In some cases we've seen clients ignore the Max-Age and Expires on a cookie, and fail to properly clear the
+      // cookie. This can cause the client to send an empty cookie back to us after we've attempted to clear it. So
+      // just decode empty cookies to an empty map. See https://github.com/playframework/playframework/issues/7680.
+      if (data.isEmpty) {
+        Map.empty[String, String]
+      } else {
+        data.split("&").flatMap { pair =>
+          pair.span(_ != '=') match { // "foo=bar".span(_ != '=') -> (foo,=bar)
+            case (_, "") => // Skip invalid
+              Option.empty[(String, String)]
+
+            case (encName, encVal) =>
+              Some(URLDecoder.decode(encName, "UTF-8") -> URLDecoder.decode(
+                encVal.tail, "UTF-8"))
+
+          }
+        }(scala.collection.breakOut)
+      }
     }
 
     // Do not change this unless you understand the security issues behind timing attacks.
@@ -606,9 +620,9 @@ trait JWTCookieDataCodec extends CookieDataCodec {
         logger.warn(s"decode: cookie has invalid signature! message = ${e.getMessage}")(SecurityMarkerContext)
         val devLogger = logger.forMode(Mode.Dev)
         devLogger.info(
-          s"""The JWT signature in the cookie does not match the locally computed signature with the server.
-             |This usually indicates the browser has a leftover cookie from another Play application,
-             |so clearing cookies may resolve this error message.""".stripMargin)
+          "The JWT signature in the cookie does not match the locally computed signature with the server. "
+            + "This usually indicates the browser has a leftover cookie from another Play application, so clearing "
+            + "cookies may resolve this error message.")
         Map.empty
 
       case NonFatal(e) =>
@@ -670,8 +684,8 @@ object JWTCookieDataCodec {
         val msg = s"Invalid header algorithm $headerAlgorithm in JWT $id"
         throw new IllegalStateException(msg)
       }
-      val claims: Claims = jws.getBody
-      claims.asScala.toMap
+
+      jws.getBody.asScala.toMap
     }
 
     /**

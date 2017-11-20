@@ -8,6 +8,7 @@ import java.time.{ Instant, ZoneId }
 import org.specs2.mutable._
 import play.api.http.{ JWTConfiguration, SecretConfiguration, SessionConfiguration }
 import play.api.mvc.Cookie.SameSite
+import play.core.cookie.encoding.ServerCookieEncoder
 import play.core.test._
 
 import scala.concurrent.duration._
@@ -44,7 +45,7 @@ class CookiesSpec extends Specification {
 
   "ServerCookieEncoder" should {
 
-    val encoder = play.core.netty.utils.ServerCookieEncoder.STRICT
+    val encoder = ServerCookieEncoder.STRICT
 
     "properly encode ! character" in {
       val output = encoder.encode("TestCookie", "!")
@@ -187,6 +188,11 @@ class CookiesSpec extends Specification {
       codec.decode(jwtValue) must contain("hello" -> "world")
     }
 
+    "decode empty string to map" in {
+      val jwtValue = ""
+      codec.decode(jwtValue) must beEmpty
+    }
+
     "encode and decode in a round trip" in {
       val jwtValue = codec.encode(Map("hello" -> "world"))
       codec.decode(jwtValue) must contain("hello" -> "world")
@@ -279,6 +285,10 @@ class CookiesSpec extends Specification {
     "decode a JWT cookie encoding" in {
       val signedEncoding = "eyJhbGciOiJIUzI1NiJ9.eyJuYmYiOjAsImlhdCI6MCwiZGF0YSI6eyJoZWxsbyI6IndvcmxkIn19.SoN8DSDXnFSK0oZXs6hsP4y_8MQqiWQAPJYiTNfAErM"
       sessionCookieBaker.decode(signedEncoding) must contain("hello" -> "world")
+    }
+
+    "decode an empty cookie" in {
+      sessionCookieBaker.decode("") must beEmpty
     }
 
     "decode an empty legacy session" in {

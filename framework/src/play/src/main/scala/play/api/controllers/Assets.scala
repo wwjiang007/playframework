@@ -20,16 +20,15 @@ import scala.util.control.NonFatal
 import scala.util.{ Failure, Success }
 
 package play.api.controllers {
-
   sealed trait TrampolineContextProvider {
     implicit def trampoline = play.core.Execution.Implicits.trampoline
   }
-
 }
 
 package controllers {
 
   import java.time._
+  import java.time.format.DateTimeParseException
   import javax.inject.Provider
 
   import akka.stream.scaladsl.StreamConverters
@@ -327,8 +326,6 @@ package controllers {
     @Inject
     def this(env: Environment, config: AssetsConfiguration, fileMimeTypes: FileMimeTypes) = this(config, env.resource _, fileMimeTypes)
 
-    import HeaderNames._
-
     lazy val finder: AssetsFinder = new AssetsFinder {
       val assetsBasePath = config.path
       val assetsUrlPrefix = config.urlPrefix
@@ -579,6 +576,9 @@ package controllers {
           }
         } catch {
           case e: IllegalArgumentException =>
+            Logger.debug(s"An invalid date was received: couldn't parse: $date", e)
+            None
+          case e: DateTimeParseException =>
             Logger.debug(s"An invalid date was received: couldn't parse: $date", e)
             None
         }
